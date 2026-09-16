@@ -2,7 +2,7 @@ import MarathonFlyover from "./components/MarathonFlyover";
 
 /** Page de démo locale. Dans Lovable, importez directement <MarathonFlyover />. */
 export default function App() {
-  const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+  const token = import.meta.env["VITE_MAPBOX_TOKEN"] as string | undefined;
   if (!token) {
     return (
       <div style={{ color: "#fff", fontFamily: "system-ui", padding: 32 }}>

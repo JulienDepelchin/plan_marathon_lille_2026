@@ -53,21 +53,25 @@ Régénérer les données si le GPX change : `npm run data` (Python 3, aucune d�
 
 ## 3. Intégrer dans Lovable
 
-1. Dans le projet Lovable, ajouter les dépendances : `mapbox-gl` et `@turf/turf`
-   (demander à Lovable « ajoute mapbox-gl et @turf/turf » ou éditer `package.json`).
-2. Copier tels quels : `src/components/MarathonFlyover.tsx`, `src/lib/path.ts`, `src/data/` (3 fichiers).
-3. Ajouter le token dans les variables d'environnement Lovable : `VITE_MAPBOX_TOKEN=pk.…`
-   (Project → Settings → Environment variables). À défaut, le passer en dur en prop — il est public de toute façon.
-4. Utiliser le composant :
+Le projet Lovable vit dans son propre dépôt (Lovable ne sait pas importer un dépôt existant) :
+<https://github.com/JulienDepelchin/marathon-map-view>. Ce dépôt-ci est l'atelier ; on y travaille,
+puis on **exporte** les 5 fichiers de production vers un clone du dépôt Lovable :
 
-```tsx
-import MarathonFlyover from "@/components/MarathonFlyover";
-
-<MarathonFlyover mapboxToken={import.meta.env.VITE_MAPBOX_TOKEN} height="80vh" />
+```bash
+git clone https://github.com/JulienDepelchin/marathon-map-view.git ../marathon-map-view
+npm run export -- ../marathon-map-view
+cd ../marathon-map-view && git add -A && git commit -m "Mise à jour de la carte" && git push
 ```
 
-Si `tsconfig` de Lovable refuse l'import JSON, activer `"resolveJsonModule": true`.
-Pour un embed iframe dans un article, voir le skill `lovable-iframe` (hauteur fixe obligatoire).
+Lovable se resynchronise seul après le push. Le token et la page (`src/routes/index.tsx`) vivent côté Lovable
+et ne sont pas écrasés par l'export.
+
+Particularités du template Lovable (TanStack Start, React 19, TypeScript strict) déjà prises en compte :
+- **rendu serveur** : Mapbox GL touche `window` à l'import ; le composant est chargé avec
+  `ClientOnly` + `lazy()` dans la page, jamais côté serveur ;
+- **tsconfig strict** (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`…) : ce dépôt utilise les
+  mêmes options, donc ce qui compile ici compile là-bas ;
+- hauteur fixe `700px` pour l'iframe (voir le skill `lovable-iframe` pour l'intégration dans l'article).
 
 ## 4. Réglages (props)
 

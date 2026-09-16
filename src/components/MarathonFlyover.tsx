@@ -184,7 +184,7 @@ export default function MarathonFlyover({
   const [rate, setRate] = useState(2);
   const runnerRef = useRef<mapboxgl.Marker | null>(null);
   const [lieuActif, setLieuActif] = useState<LieuPlace | null>(null);
-  const [basemapState, setBasemapState] = useState<Basemap>(basemap ?? basemaps[0]);
+  const [basemapState, setBasemapState] = useState<Basemap>(basemap ?? basemaps[0] ?? "standard");
   const basemapRef = useRef<Basemap>(basemapState);
   basemapRef.current = basemapState;
   const [cam, setCam] = useState<CamParams>({ altitude: cameraAltitude, pitch: cameraPitch, lookAhead });
@@ -197,7 +197,7 @@ export default function MarathonFlyover({
   const geo = useMemo(() => {
     const samples = resample(PARCOURS, 5);
     const smoothed = smooth(samples, smoothingWindow);
-    const total = samples[samples.length - 1].d;
+    const total = samples[samples.length - 1]?.d ?? 0;
     const places: LieuPlace[] = [];
     for (const l of lieux) {
       if (l.km != null) {
@@ -225,7 +225,8 @@ export default function MarathonFlyover({
   useEffect(() => {
     if (!containerRef.current) return;
     mapboxgl.accessToken = mapboxToken;
-    const start = geo.samples[0];
+    const [startLng, startLat] = sampleAt(geo.samples, 0);
+    const start = { lng: startLng, lat: startLat };
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: mapStyle ?? STYLES[basemapRef.current],
@@ -340,9 +341,10 @@ export default function MarathonFlyover({
     if (!runnerRef.current) {
       const el = document.createElement("div");
       el.className = "mf-runner";
-      el.innerHTML = ICONS.runner;
-      const s = geoRef.current.samples[0];
-      runnerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" }).setLngLat([s.lng, s.lat]).addTo(map);
+      el.innerHTML = ICONS["runner"] ?? "";
+      runnerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
+        .setLngLat(sampleAt(geoRef.current.samples, 0))
+        .addTo(map);
     }
     play();
   };
@@ -675,11 +677,12 @@ function firstLabelLayer(map: mapboxgl.Map): string | undefined {
 /** Bâtiments extrudés depuis la source composite des styles classiques (dark, satellite-streets…). */
 function addBuildings(map: mapboxgl.Map, look: "satellite" | "light" | "dark") {
   if (!map.getSource("composite") || map.getLayer("vdn-3d-buildings")) return;
-  const ramps = {
+  const RAMPS: Record<typeof look, [string, string, string]> = {
     satellite: ["#8d93a0", "#a7adba", "#c4c9d4"],
     light: ["#d3d8e2", "#e1e5ec", "#eef0f4"],
     dark: ["#18233d", "#24345c", "#33487f"],
-  }[look];
+  };
+  const ramps = RAMPS[look];
   map.addLayer(
     {
       id: "vdn-3d-buildings",

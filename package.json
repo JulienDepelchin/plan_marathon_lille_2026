@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "data": "python scripts/gpx_to_geojson.py"
+    "data": "python scripts/gpx_to_geojson.py",
+    "export": "node scripts/export-lovable.mjs"
   },
   "dependencies": {
     "@turf/turf": "^7.2.0",
@@ -16,7 +17,6 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@types/mapbox-gl": "^3.4.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

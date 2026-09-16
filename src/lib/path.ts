@@ -2,6 +2,9 @@
  * Outils géométriques pour le survol : rééchantillonnage régulier du tracé
  * (turf.js), lissage de la trajectoire caméra, profil de vitesse variable.
  * Toutes les distances sont en mètres, les temps en secondes.
+ *
+ * Écrit pour un tsconfig strict (noUncheckedIndexedAccess) : les accès par index
+ * passent par `at()`, qui garantit la présence de l'élément.
  */
 import * as turf from "@turf/turf";
 import type { Feature, LineString, Position } from "geojson";
@@ -12,6 +15,15 @@ export interface Sample {
   d: number; // distance cumulée depuis le départ (m)
 }
 
+/** Accès par index avec garantie de présence (les bornes sont contrôlées par l'appelant). */
+function at<T>(arr: readonly T[], i: number): T {
+  const v = arr[i];
+  if (v === undefined) throw new RangeError(`index ${i} hors limites (${arr.length})`);
+  return v;
+}
+const first = <T>(arr: readonly T[]): T => at(arr, 0);
+const last = <T>(arr: readonly T[]): T => at(arr, arr.length - 1);
+
 /** Points réguliers tous les `stepM` mètres le long du tracé (turf.along). */
 export function resample(line: Feature<LineString>, stepM = 5): Sample[] {
   const totalKm = turf.length(line, { units: "kilometers" });
@@ -19,13 +31,12 @@ export function resample(line: Feature<LineString>, stepM = 5): Sample[] {
   const out: Sample[] = [];
   for (let i = 0; i <= n; i++) {
     const d = i * stepM;
-    const p = turf.along(line, d / 1000, { units: "kilometers" }).geometry.coordinates;
-    out.push({ lng: p[0], lat: p[1], d });
+    const [lng, lat] = turf.along(line, d / 1000, { units: "kilometers" }).geometry.coordinates;
+    out.push({ lng: lng ?? 0, lat: lat ?? 0, d });
   }
-  const coords = line.geometry.coordinates;
-  const last = coords[coords.length - 1];
-  if (totalKm * 1000 - out[out.length - 1].d > 0.5) {
-    out.push({ lng: last[0], lat: last[1], d: totalKm * 1000 });
+  const end = last(line.geometry.coordinates);
+  if (totalKm * 1000 - last(out).d > 0.5) {
+    out.push({ lng: end[0] ?? 0, lat: end[1] ?? 0, d: totalKm * 1000 });
   }
   return out;
 }
@@ -37,15 +48,15 @@ export function resample(line: Feature<LineString>, stepM = 5): Sample[] {
  */
 export function smooth(samples: Sample[], windowM: number, passes = 2): Sample[] {
   if (samples.length < 3 || windowM <= 0) return samples;
-  const step = samples[1].d - samples[0].d;
+  const step = at(samples, 1).d - at(samples, 0).d;
   const half = Math.max(1, Math.round(windowM / step));
   let cur = samples;
   for (let p = 0; p < passes; p++) {
     const prefLng = [0];
     const prefLat = [0];
     for (const s of cur) {
-      prefLng.push(prefLng[prefLng.length - 1] + s.lng);
-      prefLat.push(prefLat[prefLat.length - 1] + s.lat);
+      prefLng.push(last(prefLng) + s.lng);
+      prefLat.push(last(prefLat) + s.lat);
     }
     const next: Sample[] = new Array(cur.length);
     for (let i = 0; i < cur.length; i++) {
@@ -53,9 +64,9 @@ export function smooth(samples: Sample[], windowM: number, passes = 2): Sample[]
       const b = Math.min(cur.length - 1, i + half);
       const cnt = b - a + 1;
       next[i] = {
-        lng: (prefLng[b + 1] - prefLng[a]) / cnt,
-        lat: (prefLat[b + 1] - prefLat[a]) / cnt,
-        d: cur[i].d,
+        lng: (at(prefLng, b + 1) - at(prefLng, a)) / cnt,
+        lat: (at(prefLat, b + 1) - at(prefLat, a)) / cnt,
+        d: at(cur, i).d,
       };
     }
     cur = next;
@@ -65,15 +76,15 @@ export function smooth(samples: Sample[], windowM: number, passes = 2): Sample[]
 
 /** Position interpolée à la distance `d` (extrapolée en ligne droite hors bornes). */
 export function sampleAt(samples: Sample[], d: number): [number, number] {
-  const total = samples[samples.length - 1].d;
-  if (d <= 0) return extrapolate(samples[0], samples[1], -d);
-  if (d >= total) return extrapolate(samples[samples.length - 1], samples[samples.length - 2], d - total);
-  const step = samples[1].d - samples[0].d;
+  const total = last(samples).d;
+  if (d <= 0) return extrapolate(at(samples, 0), at(samples, 1), -d);
+  if (d >= total) return extrapolate(last(samples), at(samples, samples.length - 2), d - total);
+  const step = at(samples, 1).d - at(samples, 0).d;
   let i = Math.min(Math.floor(d / step), samples.length - 2);
-  while (i < samples.length - 2 && samples[i + 1].d < d) i++;
-  while (i > 0 && samples[i].d > d) i--;
-  const a = samples[i];
-  const b = samples[i + 1];
+  while (i < samples.length - 2 && at(samples, i + 1).d < d) i++;
+  while (i > 0 && at(samples, i).d > d) i--;
+  const a = at(samples, i);
+  const b = at(samples, i + 1);
   const t = (d - a.d) / (b.d - a.d);
   return [a.lng + (b.lng - a.lng) * t, a.lat + (b.lat - a.lat) * t];
 }
@@ -82,8 +93,9 @@ export function sampleAt(samples: Sample[], d: number): [number, number] {
 function extrapolate(from: Sample, toward: Sample, dist: number): [number, number] {
   if (dist <= 0) return [from.lng, from.lat];
   const bearing = turf.bearing([from.lng, from.lat], [toward.lng, toward.lat]);
-  const p = turf.destination([from.lng, from.lat], dist / 1000, bearing + 180, { units: "kilometers" });
-  return p.geometry.coordinates as [number, number];
+  const [lng, lat] = turf.destination([from.lng, from.lat], dist / 1000, bearing + 180, { units: "kilometers" })
+    .geometry.coordinates;
+  return [lng ?? from.lng, lat ?? from.lat];
 }
 
 /** Cap (−180..180) de la course à la distance d. */
@@ -127,12 +139,12 @@ export function locateOnRoute(
   }
   if (current) passes.push(current);
   if (!passes.length) return null;
-  const pick =
-    kmHint == null
-      ? passes[0]
-      : passes.reduce((best, p) =>
-          Math.abs(p.d / 1000 - kmHint) < Math.abs(best.d / 1000 - kmHint) ? p : best
-        );
+  let pick = first(passes);
+  if (kmHint != null) {
+    for (const p of passes) {
+      if (Math.abs(p.d / 1000 - kmHint) < Math.abs(pick.d / 1000 - kmHint)) pick = p;
+    }
+  }
   return { d: pick.d, distToRoute: pick.dist };
 }
 
@@ -152,46 +164,50 @@ export function buildTimeline(
 ): Timeline {
   const times = [0];
   for (let i = 1; i < samples.length; i++) {
-    const d = samples[i].d;
+    const d = at(samples, i).d;
     let near = Infinity;
     for (const z of slowZones) near = Math.min(near, Math.abs(d - z));
     const k = Math.min(1, near / opts.slowRadius); // 0 = sur le lieu, 1 = hors zone
     const ease = k * k * (3 - 2 * k);
     const v = opts.slowSpeed + (opts.baseSpeed - opts.slowSpeed) * ease;
-    times.push(times[i - 1] + (d - samples[i - 1].d) / v);
+    times.push(at(times, i - 1) + (d - at(samples, i - 1).d) / v);
   }
-  return { times, total: times[times.length - 1] };
+  return { times, total: last(times) };
 }
 
 /** Inverse de la timeline : distance parcourue au temps t. */
 export function distanceAtTime(samples: Sample[], tl: Timeline, t: number): number {
   if (t <= 0) return 0;
-  if (t >= tl.total) return samples[samples.length - 1].d;
+  if (t >= tl.total) return last(samples).d;
   let lo = 0;
   let hi = tl.times.length - 1;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
-    if (tl.times[mid] <= t) lo = mid;
+    if (at(tl.times, mid) <= t) lo = mid;
     else hi = mid;
   }
-  const f = (t - tl.times[lo]) / (tl.times[hi] - tl.times[lo]);
-  return samples[lo].d + (samples[hi].d - samples[lo].d) * f;
+  const tLo = at(tl.times, lo);
+  const f = (t - tLo) / (at(tl.times, hi) - tLo);
+  const dLo = at(samples, lo).d;
+  return dLo + (at(samples, hi).d - dLo) * f;
 }
 
-/** Temps auquel on atteint la distance d (pour "sauter" à un lieu). */
+/** Temps auquel on atteint la distance d (pour se déplacer sur la timeline). */
 export function timeAtDistance(samples: Sample[], tl: Timeline, d: number): number {
   if (d <= 0) return 0;
-  const total = samples[samples.length - 1].d;
+  const total = last(samples).d;
   if (d >= total) return tl.total;
   let lo = 0;
   let hi = samples.length - 1;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
-    if (samples[mid].d <= d) lo = mid;
+    if (at(samples, mid).d <= d) lo = mid;
     else hi = mid;
   }
-  const f = (d - samples[lo].d) / (samples[hi].d - samples[lo].d);
-  return tl.times[lo] + (tl.times[hi] - tl.times[lo]) * f;
+  const dLo = at(samples, lo).d;
+  const f = (d - dLo) / (at(samples, hi).d - dLo);
+  const tLo = at(tl.times, lo);
+  return tLo + (at(tl.times, hi) - tLo) * f;
 }
 
 export function toLineString(coords: Position[]): Feature<LineString> {
