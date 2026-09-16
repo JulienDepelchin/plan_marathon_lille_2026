@@ -33,9 +33,12 @@ src/App.tsx, src/main.tsx    page de démo locale (Vite)
    ```
    lavoixdunord.fr
    lovable.app
+   lovableproject.com
    localhost:5173
    ```
    `localhost` doit être ajouté explicitement, avec le port de Vite (sans port, seuls 80 et 443 passent).
+   `lovableproject.com` est le domaine réel de l'iframe de prévisualisation Lovable : sans lui, le style se charge
+   (le tracé s'affiche) mais toutes les tuiles du fond répondent 403.
 5. Quota gratuit : 50 000 chargements de carte / mois (un « chargement » = une ouverture de page avec la carte).
    Suivi dans **Statistics** du compte.
 
