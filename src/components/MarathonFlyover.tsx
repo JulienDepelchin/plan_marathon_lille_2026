@@ -68,8 +68,14 @@ export interface MarathonFlyoverProps {
   theme?: "default" | "faded" | "monochrome";
   /** URL de style personnalisée (désactive le sélecteur de fond) */
   mapStyle?: string;
-  /** Mode au chargement */
-  startMode?: "explore" | "flyover";
+  /**
+   * Mode au chargement :
+   *  - "flyover" (défaut) : vue d'ensemble + gros bouton play au centre ; le lecteur lance le survol
+   *    ou choisit d'explorer directement ;
+   *  - "explore" : exploration libre sans écran d'accueil ;
+   *  - "autoplay" : le survol démarre tout seul (tests, kiosque).
+   */
+  startMode?: "explore" | "flyover" | "autoplay";
   /** Propose le bouton « Survoler le parcours » en mode exploration */
   showFlyoverButton?: boolean;
   /** Vitesse de croisière du survol (m/s), à ×1 */
@@ -107,7 +113,8 @@ export interface MarathonFlyoverProps {
 const PARCOURS = parcoursRaw as Feature<LineString>;
 const KM = kmRaw as FeatureCollection<Point>;
 
-type Mode = "explore" | "playing" | "paused";
+/** ready = écran d'accueil (vue d'ensemble figée derrière un gros bouton play) */
+type Mode = "ready" | "explore" | "playing" | "paused";
 
 interface LieuPlace extends Lieu {
   d: number; // distance sur le tracé (m)
@@ -148,7 +155,7 @@ export default function MarathonFlyover({
   lightPreset = "day",
   theme = "default",
   mapStyle,
-  startMode = "explore",
+  startMode = "flyover",
   showFlyoverButton = true,
   baseSpeed = 120,
   slowSpeed = 40,
@@ -308,8 +315,15 @@ export default function MarathonFlyover({
 
         if (firstLoad) {
           firstLoad = false;
-          if (startMode === "flyover") startFlyover(map);
-          else enterExplore(map, true);
+          if (startMode === "autoplay") startFlyover(map);
+          else {
+            enterExplore(map, true);
+            if (startMode === "flyover") {
+              // écran d'accueil : même vue que l'exploration, mais figée derrière le bouton play
+              setMode("ready");
+              modeRef.current = "ready";
+            }
+          }
           setLoaded(true);
         }
       });
@@ -464,10 +478,24 @@ export default function MarathonFlyover({
         <div className="mf-title">
           <span className="mf-kicker">Marathon de Lille 2026</span>
           <span className="mf-hint">
-            {inFlyover ? "Survol du parcours" : "Cliquez sur un point, glissez, zoomez, clic droit pour pivoter"}
+            {inFlyover ? "Survol du parcours" : mode === "explore" ? "Cliquez sur un point, glissez, zoomez, clic droit pour pivoter" : ""}
           </span>
         </div>
       </div>
+
+      {/* Écran d'accueil : gros bouton play */}
+      {loaded && mode === "ready" && (
+        <div className="mf-splash">
+          <button className="mf-play" onClick={() => mapRef.current && startFlyover(mapRef.current)} aria-label="Survoler le parcours">
+            <span dangerouslySetInnerHTML={{ __html: ICONS["playBig"] ?? "" }} />
+          </button>
+          <div className="mf-splash-title">Survoler le parcours</div>
+          <div className="mf-splash-sub">42,195 km de Lille à Seclin, vus du ciel</div>
+          <button className="mf-btn mf-splash-alt" onClick={() => mapRef.current && enterExplore(mapRef.current)}>
+            Explorer la carte librement
+          </button>
+        </div>
+      )}
 
       {/* Timeline (survol uniquement) */}
       {inFlyover && (
@@ -550,7 +578,7 @@ export default function MarathonFlyover({
                 </button>
               ))}
             </div>
-            <button className="mf-btn ghost" onClick={() => mapRef.current && enterExplore(mapRef.current)}>Explorer la carte</button>
+            <button className="mf-btn" onClick={() => mapRef.current && enterExplore(mapRef.current)}>Explorer la carte</button>
           </>
         )}
         {loaded && showFullscreenButton && (
@@ -620,6 +648,8 @@ const ICONS: Record<string, string> = {
   // drapeau à damier
   arrivee: SVG('<path d="M5 22V3"/><path d="M5 4h13l-2.5 4 2.5 4H5"/><path d="M8 4v8M11.5 4v8M15 4v8M5 6.7h13M5 9.3h11.5" stroke-width="1.2"/>'),
   lieu: "",
+  // gros bouton play de l'écran d'accueil
+  playBig: '<svg viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',
   // plein écran : entrer / sortir
   fsEnter: SVG('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
   fsExit: SVG('<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'),
@@ -954,6 +984,13 @@ const CSS = `
 .mf-btn.small{padding:6px 10px;font-size:12px}
 .mf-btn.on{background:#fff;color:${BG};border-color:#fff}
 .mf-rates{display:flex;gap:4px}
+.mf-splash{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:radial-gradient(ellipse at center,rgba(11,18,32,.25),rgba(11,18,32,.6));animation:mf-in .4s ease}
+.mf-play{width:88px;height:88px;border-radius:50%;border:0;background:${VDN_BLUE};color:#fff;display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 24px rgba(8,84,232,.55),0 0 0 10px rgba(8,84,232,.18);transition:transform .15s,box-shadow .15s}
+.mf-play:hover{transform:scale(1.06);box-shadow:0 8px 28px rgba(8,84,232,.65),0 0 0 14px rgba(8,84,232,.2)}
+.mf-play svg{margin-left:4px}
+.mf-splash-title{font-size:22px;font-weight:700;margin-top:6px;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.mf-splash-sub{font-size:14px;color:#d5dcea;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.mf-splash-alt{margin-top:14px}
 .mf-btn.icon{display:inline-flex;align-items:center;gap:6px;padding:8px 12px}
 .mf-btn.icon svg{width:16px;height:16px;display:block}
 .mf-fs{margin-left:auto}

@@ -109,13 +109,11 @@ la semaine du marathon et basculer si nécessaire : une prop à changer dans `sr
 
 ## 4. Réglages (props)
 
-Deux modes. **Exploration** (défaut) : tracé complet, bornes et lieux cliquables (fiche + zoom), vue libre,
-sélecteur de fond de carte. **Survol** : caméra qui suit le tracé, accessible par le bouton « Survoler le parcours »
-ou en mode initial. Le survol peut donner le tournis : à réserver aux lecteurs qui le demandent.
+Trois états. **Accueil** (défaut) : vue d'ensemble du parcours, gros bouton play au centre pour lancer le survol, ou lien pour explorer directement. **Survol** : caméra qui suit le tracé, timeline, bouton « Explorer la carte » à tout moment. **Exploration** : tracé complet, points cliquables (fiche + zoom), vue libre, sélecteur de fond.
 
 | Prop | Défaut | Effet |
 |---|---|---|
-| `startMode` | `"explore"` | `"flyover"` pour démarrer par le survol |
+| `startMode` | `"flyover"` | écran d'accueil avec gros bouton play (survol) et lien « Explorer la carte librement » ; `"explore"` = exploration directe ; `"autoplay"` = survol immédiat |
 | `showFlyoverButton` | `true` | `false` pour retirer complètement le survol |
 | `basemaps` | `["standard","standard-satellite"]` | fonds proposés au lecteur (ordre des boutons ; le premier est le fond initial). Aussi disponibles : `"light"`, `"dark"`, `"satellite"` (classique). Les fonds satellite n'ont pas de bâtiments 3D : la vue passe à plat (pitch 0) quand on les choisit |
 | `basemap` | premier de `basemaps` | fond initial |
