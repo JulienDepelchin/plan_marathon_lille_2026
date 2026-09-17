@@ -97,6 +97,12 @@ export interface MarathonFlyoverProps {
   smoothingWindow?: number;
   /** Bornes kilométriques sur le tracé (désactivées par défaut : notre mesure n'est pas celle de l'organisateur) */
   showKmMarkers?: boolean;
+  /**
+   * Gestes coopératifs (défaut : true) : zoom à la molette seulement avec Ctrl/⌘, déplacement
+   * à deux doigts sur mobile. Indispensable en iframe dans un article, sinon la carte capture
+   * le défilement de la page.
+   */
+  cooperativeGestures?: boolean;
   /** Hauteur CSS du composant */
   height?: string;
   /** Liste des lieux (par défaut src/data/lieux.ts) */
@@ -157,6 +163,7 @@ export default function MarathonFlyover({
   lookAhead = 260,
   smoothingWindow = 120,
   showKmMarkers = false,
+  cooperativeGestures = true,
   height = "100vh",
   lieux = LIEUX,
   debug = false,
@@ -236,6 +243,15 @@ export default function MarathonFlyover({
       bearing: 0,
       antialias: true,
       attributionControl: true,
+      cooperativeGestures,
+      locale: {
+        "ScrollZoomBlocker.CtrlMessage": "Ctrl + molette pour zoomer la carte",
+        "ScrollZoomBlocker.CmdMessage": "⌘ + molette pour zoomer la carte",
+        "TouchPanBlocker.Message": "Deux doigts pour déplacer la carte",
+        "NavigationControl.ZoomIn": "Zoom avant",
+        "NavigationControl.ZoomOut": "Zoom arrière",
+        "NavigationControl.ResetBearing": "Remettre le nord en haut",
+      },
     });
     mapRef.current = map;
     let firstLoad = true;

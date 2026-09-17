@@ -74,7 +74,17 @@ Particularités du template Lovable (TanStack Start, React 19, TypeScript strict
   `ClientOnly` + `lazy()` dans la page, jamais côté serveur ;
 - **tsconfig strict** (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`…) : ce dépôt utilise les
   mêmes options, donc ce qui compile ici compile là-bas ;
-- hauteur fixe `700px` pour l'iframe (voir le skill `lovable-iframe` pour l'intégration dans l'article).
+- **iframe** : l'app remplit son cadre (`height="100%"` dans `src/routes/index.tsx`, html/body/#root à 100 %) ;
+  la hauteur se décide à un seul endroit, le code d'embed du CMS. Le composant active les gestes coopératifs
+  de Mapbox pour ne pas capturer le défilement de l'article. Code d'embed de référence :
+
+```html
+<iframe src="https://marathon-lille-2026.lovable.app/" title="Parcours du marathon de Lille 2026"
+        width="100%" height="620" style="border:0;display:block" loading="lazy" allow="fullscreen"></iframe>
+```
+
+  La colonne d'article fait 600-800 px : le composant y est en mode étroit quel que soit l'écran du lecteur
+  (voir le skill `lovable-iframe`).
 
 ## 4. Réglages (props)
 
@@ -98,6 +108,7 @@ ou en mode initial. Le survol peut donner le tournis : à réserver aux lecteurs
 | `cameraPitch` | `70` ° | survol : inclinaison (0 = du dessus, 80 = rasante). Le recul derrière le coureur en découle : altitude·tan(pitch) − lookAhead (≈ 1 110 m avec les défauts) |
 | `lookAhead` | `260` m | survol : point visé devant le coureur ; le tracé se dessine jusque-là |
 | `showKmMarkers` | `false` | bornes km 1…N sur le tracé (masquées : notre mesure diffère de celle de l'organisateur) |
+| `cooperativeGestures` | `true` | zoom molette avec Ctrl/⌘ et déplacement à deux doigts : évite que la carte capture le défilement de l'article en iframe |
 | `smoothingWindow` | `120` m | survol : lissage de la trajectoire caméra (virages, demi-tours) |
 | `lieux` | `LIEUX` | liste alternative de lieux |
 | `debug` | `false` | curseurs de calibrage de la caméra de survol (ne pas publier) |
@@ -113,9 +124,9 @@ Inspiré de l'exemple Mapbox « Animate the camera along a path » (FreeCamera A
 1. `turf.along` rééchantillonne le tracé **tous les 5 m** (~8 500 points au lieu des 989 du GPX, espacés de 0,1 à 450 m).
 2. Cette polyligne est lissée (moyenne glissante ±120 m, deux passes) pour la **trajectoire caméra uniquement** ;
    le tracé affiché reste brut.
-3. À chaque image : position caméra = point lissé 180 m derrière le coureur à 150 m d'altitude ;
-   cible = point lissé 320 m devant, au sol ; `lookAtPoint` en déduit pitch et bearing.
-   Un lissage exponentiel (τ = 0,8 s) absorbe les épingles et le demi-tour du km 41,9.
+3. À chaque image : cible = point lissé 260 m devant le coureur, au sol ; position caméra = point lissé
+   à 500 m d'altitude, reculée de `altitude·tan(pitch) − 260` m (≈ 1 110 m à 70°) ; `lookAtPoint` en déduit
+   le cap. Un lissage exponentiel (τ = 0,8 s) absorbe les épingles.
 4. La vitesse n'est pas constante : profil `buildTimeline` avec ralentissement smoothstep autour des lieux.
 
 ## 6. Points qui demandent un choix éditorial
