@@ -23,6 +23,7 @@ import parcoursRaw from "../data/parcours.json";
 import kmRaw from "../data/km.json";
 import { LIEUX, type Lieu } from "../data/lieux";
 import { loadEngine, type Basemap, type Engine, type GL, type GLMap, type GLMarker } from "../lib/engine";
+import { computeCamera, lookBehindOf, newCamState, resetCamState, type CamParams } from "../lib/camera";
 import {
   resample,
   smooth,
@@ -30,7 +31,7 @@ import {
   locateOnRoute,
   buildTimeline,
   curvatureProfile,
-  profileAt,
+  smoothProfile,
   distanceAtTime,
   timeAtDistance,
   type Sample,
@@ -150,17 +151,6 @@ interface LieuPlace extends Lieu {
   coord: [number, number];
 }
 
-interface CamParams {
-  altitude: number;
-  pitch: number;
-  lookAhead: number;
-}
-
-/** Recul de la caméra derrière le coureur, déduit du triangle altitude / pitch. */
-function lookBehindOf(p: CamParams): number {
-  const horiz = p.altitude * Math.tan((Math.min(85, Math.max(5, p.pitch)) * Math.PI) / 180);
-  return Math.max(20, horiz - p.lookAhead);
-}
 
 /** Emprise du tracé [[ouest, sud], [est, nord]] */
 const ROUTE_BOUNDS: [[number, number], [number, number]] = (() => {
@@ -216,9 +206,7 @@ export default function MarathonFlyover({
     t: 0,
     last: 0,
     rate: 2, // ×2 par défaut
-    camPos: null as [number, number] | null,
-    camTgt: null as [number, number] | null,
-    camAlt: null as number | null,
+    cam: newCamState(2),
   });
 
   const [mode, setMode] = useState<Mode>("explore");
@@ -269,7 +257,9 @@ export default function MarathonFlyover({
   const geo = useMemo(() => {
     const samples = resample(PARCOURS, 5);
     const smoothed = smooth(samples, smoothingWindow);
-    const curvature = curvatureProfile(samples, 400);
+    // sinuosité : fenêtre 600 m pour la vitesse ; relissée sur ±1 km pour l'altitude (pas de pompage)
+    const curvature = curvatureProfile(samples, 600);
+    const curvatureLift = smoothProfile(samples, curvature, 1000);
     const total = samples[samples.length - 1]?.d ?? 0;
     const places: LieuPlace[] = [];
     for (const l of lieux) {
@@ -288,7 +278,7 @@ export default function MarathonFlyover({
       places.map((p) => p.d),
       { baseSpeed, slowSpeed, slowRadius, curveSlowdown, curvature }
     );
-    return { samples, smoothed, curvature, curveLift, total, places, timeline };
+    return { samples, smoothed, curvature, curvatureLift, curveLift, total, places, timeline };
   }, [lieux, baseSpeed, slowSpeed, slowRadius, smoothingWindow, curveSlowdown, curveLift]);
   const geoRef = useRef(geo);
   geoRef.current = geo;
@@ -423,9 +413,7 @@ export default function MarathonFlyover({
     const g = geoRef.current;
     const d = Math.max(0, Math.min(1, fraction)) * g.total;
     anim.current.t = timeAtDistance(g.samples, g.timeline, d);
-    anim.current.camPos = null;
-    anim.current.camTgt = null;
-    anim.current.camAlt = null;
+    resetCamState(anim.current.cam);
     markersRef.current.forEach((m) => m.remove());
     markersRef.current.clear();
     if (mode !== "playing") play();
@@ -436,9 +424,7 @@ export default function MarathonFlyover({
     const gl = glRef.current;
     if (!gl) return;
     anim.current.t = 0;
-    anim.current.camPos = null;
-    anim.current.camTgt = null;
-    anim.current.camAlt = null;
+    resetCamState(anim.current.cam);
     markersRef.current.forEach((m) => m.remove());
     markersRef.current.clear();
     setLieuActif(null);
@@ -463,7 +449,8 @@ export default function MarathonFlyover({
     a.t += dt * a.rate;
 
     const d = distanceAtTime(g.samples, g.timeline, a.t);
-    applyCamera(gl, map, g, d, a, camRef.current, dt);
+    const pose = computeCamera(g, d, a.cam, camRef.current, dt);
+    gl.lookFromTo(map, pose.position, pose.altitude, pose.target);
     updateLayers(map, g, d);
     runnerRef.current?.setLngLat(sampleAt(g.samples, d));
     revealPlaces(gl, map, g, d, markersRef.current, setLieuActif);
@@ -750,6 +737,7 @@ type Geo = {
   samples: Sample[];
   smoothed: Sample[];
   curvature: number[];
+  curvatureLift: number[];
   curveLift: number;
   total: number;
   places: LieuPlace[];
@@ -945,37 +933,7 @@ function pointFC(c: [number, number]): FeatureCollection<Point> {
   return { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } }] };
 }
 
-/**
- * Caméra de survol : cible = point lissé `lookAhead` m devant le coureur, au sol ;
- * position = point lissé à `altitude` m, reculée de sorte que l'angle vaille `pitch`.
- * Lissage exponentiel (τ = 0,8 s) pour absorber virages serrés et demi-tours.
- */
-function applyCamera(
-  gl: GL,
-  map: GLMap,
-  geo: Geo,
-  d: number,
-  a: { camPos: [number, number] | null; camTgt: [number, number] | null; camAlt: number | null; rate: number },
-  p: CamParams,
-  dt: number
-) {
-  const pos = sampleAt(geo.smoothed, d - lookBehindOf(p));
-  const tgt = sampleAt(geo.smoothed, d + p.lookAhead);
-  // Constante de temps ramenée à la vitesse de lecture : un filtre à τ fixe prend un retard
-  // proportionnel à la vitesse (v·τ ≈ 600 m à ×6). À τ = 0,8 s / rate, le retard reste ≈ 100 m.
-  const tau = 0.8 / Math.max(1, a.rate);
-  const k = a.camPos ? 1 - Math.exp(-dt / tau) : 1;
-  a.camPos = a.camPos ? lerp(a.camPos, pos, k) : pos;
-  a.camTgt = a.camTgt ? lerp(a.camTgt, tgt, k) : tgt;
-  // prise de hauteur dans les zones tortueuses, lissée comme la position
-  const wantAlt = p.altitude * (1 + geo.curveLift * profileAt(geo.samples, geo.curvature, d));
-  a.camAlt = a.camAlt == null ? wantAlt : a.camAlt + (wantAlt - a.camAlt) * k;
-  gl.lookFromTo(map, a.camPos, a.camAlt, a.camTgt);
-}
-
-function lerp(a: [number, number], b: [number, number], k: number): [number, number] {
-  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
-}
+// Caméra de survol : voir src/lib/camera.ts (fonction pure, simulable hors navigateur).
 
 /** Mode survol : révélation progressive. */
 function updateLayers(map: GLMap, geo: Geo, d: number) {

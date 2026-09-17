@@ -66,12 +66,12 @@ function ExportPage({ engine, token }: { engine: Engine; token: string | undefin
         mapboxToken={token}
         startMode="explore"
         controlRef={control}
-        cameraAltitude={num("altitude", 700)}
-        cameraPitch={num("pitch", 60)}
+        cameraAltitude={num("altitude", 450)}
+        cameraPitch={num("pitch", 70)}
         lookAhead={num("lookahead", 120)}
         smoothingWindow={num("smoothing", 350)}
         curveSlowdown={num("slowdown", 0.65)}
-        curveLift={num("lift", 0.6)}
+        curveLift={num("lift", 0.4)}
       />
     </div>
   );

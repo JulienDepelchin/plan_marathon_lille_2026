@@ -183,6 +183,27 @@ export function curvatureProfile(samples: Sample[], windowM = 400, fullTurnDeg =
   return out;
 }
 
+/** Moyenne glissante d'un profil (demi-fenêtre en mètres), deux passes ≈ noyau triangulaire. */
+export function smoothProfile(samples: Sample[], profile: number[], halfWindowM: number, passes = 2): number[] {
+  const n = profile.length;
+  if (n < 3) return profile;
+  const step = at(samples, 1).d - at(samples, 0).d;
+  const half = Math.max(1, Math.round(halfWindowM / step));
+  let cur = profile;
+  for (let p = 0; p < passes; p++) {
+    const pref = [0];
+    for (const v of cur) pref.push(last(pref) + v);
+    const next: number[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - half);
+      const b = Math.min(n - 1, i + half);
+      next[i] = (at(pref, b + 1) - at(pref, a)) / (b - a + 1);
+    }
+    cur = next;
+  }
+  return cur;
+}
+
 /** Valeur d'un profil (indexé comme `samples`) à la distance d. */
 export function profileAt(samples: Sample[], profile: number[], d: number): number {
   if (!profile.length) return 0;

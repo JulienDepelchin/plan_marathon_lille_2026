@@ -11,8 +11,8 @@
  *
  *   --rate      multiplicateur de vitesse du survol (2 = comme le site ; 4 recommandé pour la vidéo)
  *   --altitude --pitch --lookahead --smoothing --slowdown --lift : caméra du préréglage vidéo
- *               (défauts : 700 m, 60°, 120 m, 350 m, 0.65, 0.6 — plus haut, plus calme et plus lent
- *               que le site dans les zones tortueuses ; voir props du composant)
+ *               (défauts : 450 m, 70°, 120 m, 350 m, 0.65, 0.4 — même pitch que le site, un peu plus
+ *               proche, cap plus lissé, plus lent et plus haut dans les zones tortueuses)
  *   --duration  durée maximale de la vidéo en secondes (0 = jusqu'à l'arrivée)
  *   --intro     secondes figées sur la première image avant le départ
  *   --outro     secondes figées sur l'arrivée

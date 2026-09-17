@@ -25,6 +25,7 @@ const FILES = [
   "src/components/MarathonFlyover.tsx",
   "src/lib/path.ts",
   "src/lib/engine.ts",
+  "src/lib/camera.ts",
   "src/data/parcours.json",
   "src/data/km.json",
   "src/data/lieux.ts",

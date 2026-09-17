@@ -126,10 +126,11 @@ node scripts/export-video.mjs --out sorties/survol-60s.mp4 --rate 6 --duration 6
 
 Options : `--rate` (vitesse du survol ; 4 recommandé), `--duration` (coupe à N s ; 0 = jusqu'à l'arrivée), `--fps`,
 `--width/--height`, `--engine maplibre`, `--intro/--outro` (secondes figées au début / à la fin), et la caméra du
-préréglage vidéo `--altitude 700 --pitch 60 --lookahead 120 --smoothing 350 --slowdown 0.65 --lift 0.6` : plus haut,
-moins incliné (le coureur remonte au centre, le tracé déjà couru reste visible), cap plus lissé, et **ralentissement +
-prise de hauteur automatiques dans les zones tortueuses** (Lille km 0-10 et 35-42 ; sinuosité mesurée sur le tracé).
-Durées à ×4 avec ce préréglage : ≈ 2 min 20 ; à ×6 : ≈ 1 min 30.
+préréglage vidéo `--altitude 450 --pitch 70 --lookahead 120 --smoothing 350 --slowdown 0.65 --lift 0.4` : même
+pitch que le site, visée rapprochée (le coureur reste au centre, le tracé déjà couru visible), cap plus lissé, et
+**ralentissement + prise de hauteur automatiques dans les zones tortueuses** (Lille km 0-10 et 35-42 ; sinuosité
+mesurée sur le tracé). Durées à ×4 : ≈ 2 min 45 ; à ×6 : ≈ 1 min 50. Attention : avec un pitch constant, l'altitude
+fixe la distance caméra→cible (`altitude·tan(pitch)`, 1,2 km à 450 m / 70°) ; à 700 m la vue devient panoramique.
 Sans `--headless`, une fenêtre Chromium s'ouvre et utilise la carte graphique (plus rapide).
 Les vidéos vont dans `sorties/` (ignoré par git). Attribution Mapbox/OSM conservée dans l'image (obligatoire).
 
@@ -157,7 +158,7 @@ Trois états. **Accueil** (défaut) : vue d'ensemble du parcours, gros bouton pl
 | `showFullscreenButton` | `true` | bouton « Plein écran » (API Fullscreen sur le composant ; en iframe, `allow="fullscreen"` obligatoire ; sur iPhone, ouvre la carte dans un nouvel onglet) |
 | `smoothingWindow` | `120` m | survol : lissage de la trajectoire caméra (virages, demi-tours) |
 | `curveSlowdown` | `0.35` | survol : ralentissement proportionnel à la sinuosité locale (180° de virages cumulés sur 400 m = zone « pleine ») — calme Lille sans allonger les champs. Le préréglage vidéo monte à 0,65 |
-| `curveLift` | `0` | survol : prise de hauteur dans les zones tortueuses, altitude × (1 + curveLift × sinuosité). Préréglage vidéo : 0,6 |
+| `curveLift` | `0` | survol : prise de hauteur dans les zones tortueuses, altitude × (1 + curveLift × sinuosité). Préréglage vidéo : 0,4 |
 | `lieux` | `LIEUX` | liste alternative de lieux |
 | `debug` | `false` | curseurs de calibrage de la caméra de survol (ne pas publier) |
 | `onFinish` | — | callback fin de survol |
@@ -167,15 +168,22 @@ En survol, une timeline Départ → Arrivée (ticks = ravitos) remplace le bande
 
 ## 5. Comment marche la caméra
 
-Inspiré de l'exemple Mapbox « Animate the camera along a path » (FreeCamera API) :
+Fonction pure dans `src/lib/camera.ts` (même entrée → même image : simulable hors navigateur, rendue image par image) :
 
-1. `turf.along` rééchantillonne le tracé **tous les 5 m** (~8 500 points au lieu des 989 du GPX, espacés de 0,1 à 450 m).
-2. Cette polyligne est lissée (moyenne glissante ±120 m, deux passes) pour la **trajectoire caméra uniquement** ;
-   le tracé affiché reste brut.
-3. À chaque image : cible = point lissé 260 m devant le coureur, au sol ; position caméra = point lissé
-   à 500 m d'altitude, reculée de `altitude·tan(pitch) − 260` m (≈ 1 110 m à 70°) ; `lookAtPoint` en déduit
-   le cap. Un lissage exponentiel (τ = 0,8 s) absorbe les épingles.
-4. La vitesse n'est pas constante : profil `buildTimeline` avec ralentissement smoothstep autour des lieux.
+1. `turf.along` rééchantillonne le tracé **tous les 5 m** (~8 500 points au lieu des 975 du GPX, espacés de 0,1 à 450 m).
+2. Cette polyligne est lissée (moyenne glissante, deux passes ; ±120 m sur le site, ±350 m en vidéo) pour la
+   **trajectoire caméra uniquement** ; le tracé affiché reste brut.
+3. À chaque image : la **cible** est le point lissé `lookAhead` m devant le coureur, au sol ; le **cap** est le cap local
+   de la course (±100 m), filtré (τ = 1 s) et plafonné à 40°/s de rotation ; la **position** est placée derrière la cible,
+   à l'opposé du cap, à `altitude·tan(pitch)` : le pitch est donc constant par construction. L'**altitude** monte dans
+   les zones tortueuses (sinuosité relissée sur ±1 km, filtre τ = 4 s) — jamais de pompage.
+   Pourquoi pas « le point N m en arrière sur le tracé » : quand le parcours se replie (boucle Porte de Paris),
+   ce point se retrouve à côté de la cible et le pitch s'effondre.
+4. La vitesse n'est pas constante : `buildTimeline` ralentit autour des points (smoothstep) et proportionnellement
+   à la sinuosité locale (`curveSlowdown`).
+
+Vérification sans navigateur : une simulation de tout le parcours à ×4 donne pitch 70,00° constant, rotation ≤ 40°/s,
+altitude 794-1 053 m avec au plus 19 m/s de variation.
 
 ## 6. Points qui demandent un choix éditorial
 
