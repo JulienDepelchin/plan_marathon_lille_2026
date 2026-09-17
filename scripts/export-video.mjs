@@ -9,7 +9,10 @@
  *                                 [--fps 30] [--rate 6] [--duration 60] [--engine mapbox|maplibre]
  *                                 [--intro 1.5] [--outro 2] [--headless]
  *
- *   --rate      multiplicateur de vitesse du survol (2 = comme le site ≈ 3 min ; 6 ≈ 1 min)
+ *   --rate      multiplicateur de vitesse du survol (2 = comme le site ; 4 recommandé pour la vidéo)
+ *   --altitude --pitch --lookahead --smoothing --slowdown --lift : caméra du préréglage vidéo
+ *               (défauts : 700 m, 60°, 120 m, 350 m, 0.65, 0.6 — plus haut, plus calme et plus lent
+ *               que le site dans les zones tortueuses ; voir props du composant)
  *   --duration  durée maximale de la vidéo en secondes (0 = jusqu'à l'arrivée)
  *   --intro     secondes figées sur la première image avant le départ
  *   --outro     secondes figées sur l'arrivée
@@ -37,7 +40,12 @@ const ENGINE = args.engine ?? "mapbox";
 const INTRO = Number(args.intro ?? 1.5);
 const OUTRO = Number(args.outro ?? 2);
 const HEADLESS = args.headless === "1";
-const URL = `http://localhost:5173/?export=1&engine=${ENGINE}`;
+// réglages caméra du préréglage vidéo (défauts dans src/App.tsx) : --altitude --pitch --lookahead --smoothing --slowdown --lift
+const CAM = ["altitude", "pitch", "lookahead", "smoothing", "slowdown", "lift"]
+  .filter((k) => args[k] != null)
+  .map((k) => `&${k}=${encodeURIComponent(args[k])}`)
+  .join("");
+const URL = `http://localhost:5173/?export=1&engine=${ENGINE}${CAM}`;
 
 function ffmpegPath() {
   if (process.env.FFMPEG) return process.env.FFMPEG;

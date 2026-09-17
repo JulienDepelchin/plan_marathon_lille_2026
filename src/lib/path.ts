@@ -149,8 +149,52 @@ export function locateOnRoute(
 }
 
 /**
+ * Sinuosité locale du tracé, 0 (ligne droite) → 1 (très tortueux), par sample.
+ * = somme des changements de cap absolus sur une fenêtre de ±`windowM`/2, rapportée à `fullTurnDeg`
+ * (180° de virages cumulés dans la fenêtre = 1). Sert à ralentir et à prendre de la hauteur en ville.
+ */
+export function curvatureProfile(samples: Sample[], windowM = 400, fullTurnDeg = 180): number[] {
+  const n = samples.length;
+  if (n < 3) return new Array(n).fill(0);
+  const step = at(samples, 1).d - at(samples, 0).d;
+  // cap mesuré sur ±15 m pour ne pas amplifier le bruit du GPX
+  const look = Math.max(1, Math.round(15 / step));
+  const bearings: number[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = at(samples, Math.max(0, i - look));
+    const b = at(samples, Math.min(n - 1, i + look));
+    bearings[i] = turf.bearing([a.lng, a.lat], [b.lng, b.lat]);
+  }
+  const turn: number[] = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const d = Math.abs((((at(bearings, i) - at(bearings, i - 1)) % 360) + 540) % 360 - 180);
+    turn[i] = d;
+  }
+  // somme glissante
+  const half = Math.max(1, Math.round(windowM / 2 / step));
+  const pref = [0];
+  for (const t of turn) pref.push(last(pref) + t);
+  const out: number[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = Math.max(0, i - half);
+    const b = Math.min(n - 1, i + half);
+    out[i] = Math.min(1, (at(pref, b + 1) - at(pref, a)) / fullTurnDeg);
+  }
+  return out;
+}
+
+/** Valeur d'un profil (indexé comme `samples`) à la distance d. */
+export function profileAt(samples: Sample[], profile: number[], d: number): number {
+  if (!profile.length) return 0;
+  const step = at(samples, 1).d - at(samples, 0).d;
+  const i = Math.max(0, Math.min(profile.length - 1, Math.round(d / step)));
+  return at(profile, i);
+}
+
+/**
  * Profil de vitesse : vitesse de base, ralentissement progressif (smoothstep)
- * à l'approche des lieux (`slowZones` = distances le long du tracé, en m).
+ * à l'approche des lieux (`slowZones` = distances le long du tracé, en m), et
+ * ralentissement proportionnel à la sinuosité (`curveSlowdown` × `curvature[i]`).
  */
 export interface Timeline {
   times: number[]; // temps cumulé (s) à chaque sample
@@ -160,16 +204,18 @@ export interface Timeline {
 export function buildTimeline(
   samples: Sample[],
   slowZones: number[],
-  opts: { baseSpeed: number; slowSpeed: number; slowRadius: number }
+  opts: { baseSpeed: number; slowSpeed: number; slowRadius: number; curveSlowdown?: number; curvature?: number[] }
 ): Timeline {
   const times = [0];
+  const cs = opts.curveSlowdown ?? 0;
   for (let i = 1; i < samples.length; i++) {
     const d = at(samples, i).d;
     let near = Infinity;
     for (const z of slowZones) near = Math.min(near, Math.abs(d - z));
     const k = Math.min(1, near / opts.slowRadius); // 0 = sur le lieu, 1 = hors zone
     const ease = k * k * (3 - 2 * k);
-    const v = opts.slowSpeed + (opts.baseSpeed - opts.slowSpeed) * ease;
+    let v = opts.slowSpeed + (opts.baseSpeed - opts.slowSpeed) * ease;
+    if (cs > 0 && opts.curvature) v *= Math.max(0.15, 1 - cs * (opts.curvature[i] ?? 0));
     times.push(at(times, i - 1) + (d - at(samples, i - 1).d) / v);
   }
   return { times, total: last(times) };

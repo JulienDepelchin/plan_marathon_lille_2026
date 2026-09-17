@@ -52,10 +52,27 @@ function ExportPage({ engine, token }: { engine: Engine; token: string | undefin
     };
   }, []);
 
+  // réglages caméra passés dans l'URL par scripts/export-video.mjs (préréglage vidéo ≠ site)
+  const q = new URLSearchParams(window.location.search);
+  const num = (k: string, def: number) => {
+    const v = Number(q.get(k));
+    return q.has(k) && Number.isFinite(v) ? v : def;
+  };
   return (
     <div className="export-root">
       <style>{EXPORT_CSS}</style>
-      <MarathonFlyover engine={engine} mapboxToken={token} startMode="explore" controlRef={control} />
+      <MarathonFlyover
+        engine={engine}
+        mapboxToken={token}
+        startMode="explore"
+        controlRef={control}
+        cameraAltitude={num("altitude", 700)}
+        cameraPitch={num("pitch", 60)}
+        lookAhead={num("lookahead", 120)}
+        smoothingWindow={num("smoothing", 350)}
+        curveSlowdown={num("slowdown", 0.65)}
+        curveLift={num("lift", 0.6)}
+      />
     </div>
   );
 }

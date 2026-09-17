@@ -124,8 +124,12 @@ npm run dev                              # dans un autre terminal
 node scripts/export-video.mjs --out sorties/survol-60s.mp4 --rate 6 --duration 60 --headless
 ```
 
-Options : `--rate` (vitesse du survol : 2 = comme le site ≈ 3 min ; 6 ≈ 64 s), `--duration` (coupe à N s ; 0 = jusqu'à
-l'arrivée), `--fps`, `--width/--height`, `--engine maplibre`, `--intro/--outro` (secondes figées au début / à la fin).
+Options : `--rate` (vitesse du survol ; 4 recommandé), `--duration` (coupe à N s ; 0 = jusqu'à l'arrivée), `--fps`,
+`--width/--height`, `--engine maplibre`, `--intro/--outro` (secondes figées au début / à la fin), et la caméra du
+préréglage vidéo `--altitude 700 --pitch 60 --lookahead 120 --smoothing 350 --slowdown 0.65 --lift 0.6` : plus haut,
+moins incliné (le coureur remonte au centre, le tracé déjà couru reste visible), cap plus lissé, et **ralentissement +
+prise de hauteur automatiques dans les zones tortueuses** (Lille km 0-10 et 35-42 ; sinuosité mesurée sur le tracé).
+Durées à ×4 avec ce préréglage : ≈ 2 min 20 ; à ×6 : ≈ 1 min 30.
 Sans `--headless`, une fenêtre Chromium s'ouvre et utilise la carte graphique (plus rapide).
 Les vidéos vont dans `sorties/` (ignoré par git). Attribution Mapbox/OSM conservée dans l'image (obligatoire).
 
@@ -152,6 +156,8 @@ Trois états. **Accueil** (défaut) : vue d'ensemble du parcours, gros bouton pl
 | `cooperativeGestures` | `true` | zoom molette avec Ctrl/⌘ et déplacement à deux doigts : évite que la carte capture le défilement de l'article en iframe |
 | `showFullscreenButton` | `true` | bouton « Plein écran » (API Fullscreen sur le composant ; en iframe, `allow="fullscreen"` obligatoire ; sur iPhone, ouvre la carte dans un nouvel onglet) |
 | `smoothingWindow` | `120` m | survol : lissage de la trajectoire caméra (virages, demi-tours) |
+| `curveSlowdown` | `0.35` | survol : ralentissement proportionnel à la sinuosité locale (180° de virages cumulés sur 400 m = zone « pleine ») — calme Lille sans allonger les champs. Le préréglage vidéo monte à 0,65 |
+| `curveLift` | `0` | survol : prise de hauteur dans les zones tortueuses, altitude × (1 + curveLift × sinuosité). Préréglage vidéo : 0,6 |
 | `lieux` | `LIEUX` | liste alternative de lieux |
 | `debug` | `false` | curseurs de calibrage de la caméra de survol (ne pas publier) |
 | `onFinish` | — | callback fin de survol |
