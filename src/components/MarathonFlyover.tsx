@@ -57,7 +57,7 @@ export interface MarathonFlyoverProps {
   /** Moteur : "mapbox" (défaut, style Standard 3D) ou "maplibre" (OpenFreeMap + orthophoto IGN, sans clé) */
   engine?: Engine;
   /** Token public Mapbox (pk.…) — requis avec engine="mapbox", ignoré sinon */
-  mapboxToken?: string;
+  mapboxToken?: string | undefined;
   /** Fonds proposés au lecteur, dans l'ordre des boutons. Le premier est le fond initial. */
   basemaps?: Basemap[];
   /** Fond initial (sinon le premier de `basemaps`) */
@@ -107,6 +107,11 @@ export interface MarathonFlyoverProps {
   lieux?: Lieu[];
   /** Panneau de calibrage de la caméra de survol — pour régler, pas pour publier */
   debug?: boolean;
+  /**
+   * Mode export vidéo : masque les commandes, expose `window.__mf` (start/step/…) pour un
+   * navigateur piloté qui capture image par image (scripts/export-video.mjs). Jamais en production.
+   */
+  exportMode?: boolean;
   onFinish?: () => void;
 }
 
@@ -170,6 +175,7 @@ export default function MarathonFlyover({
   height = "100vh",
   lieux = LIEUX,
   debug = false,
+  exportMode = false,
   onFinish,
 }: MarathonFlyoverProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -398,7 +404,7 @@ export default function MarathonFlyover({
   };
 
   // ───────────── Mode survol ─────────────
-  const startFlyover = (map: GLMap) => {
+  const startFlyover = (map: GLMap, manual = false) => {
     const gl = glRef.current;
     if (!gl) return;
     anim.current.t = 0;
@@ -415,17 +421,16 @@ export default function MarathonFlyover({
       el.innerHTML = ICONS["runner"] ?? "";
       runnerRef.current = gl.marker(el, "center").setLngLat(sampleAt(geoRef.current.samples, 0)).addTo(map);
     }
-    play();
+    play(manual);
   };
 
-  const frame = (now: number) => {
+  /** Avance l'animation de `dt` secondes (temps réel, le multiplicateur `rate` s'applique) et rend l'image. */
+  const advance = (dt: number): boolean => {
     const map = mapRef.current;
     const gl = glRef.current;
-    if (!map || !gl) return;
+    if (!map || !gl) return true;
     const g = geoRef.current;
     const a = anim.current;
-    const dt = a.last ? Math.min((now - a.last) / 1000, 0.1) : 0;
-    a.last = now;
     a.t += dt * a.rate;
 
     const d = distanceAtTime(g.samples, g.timeline, a.t);
@@ -434,21 +439,70 @@ export default function MarathonFlyover({
     runnerRef.current?.setLngLat(sampleAt(g.samples, d));
     revealPlaces(gl, map, g, d, markersRef.current, setLieuActif);
     setKm(d / 1000);
+    return a.t >= g.timeline.total;
+  };
 
-    if (a.t >= g.timeline.total) {
+  const frame = (now: number) => {
+    const a = anim.current;
+    const dt = a.last ? Math.min((now - a.last) / 1000, 0.1) : 0;
+    a.last = now;
+    if (advance(dt)) {
       finish();
       return;
     }
     rafRef.current = requestAnimationFrame(frame);
   };
 
-  const play = () => {
+  /** `manual` = pas de boucle rAF : l'animation est avancée de l'extérieur (export vidéo). */
+  const play = (manual = false) => {
     anim.current.last = 0;
     setMode("playing");
     modeRef.current = "playing";
     cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(frame);
+    if (!manual) rafRef.current = requestAnimationFrame(frame);
   };
+
+  // ── Mode export : API pilotable par un navigateur automatisé (scripts/export-video.mjs) ──
+  useEffect(() => {
+    if (!exportMode) return;
+    const api = {
+      isReady: () => loaded,
+      total: () => geoRef.current.timeline.total,
+      setRate: (r: number) => {
+        anim.current.rate = r;
+        setRate(r);
+      },
+      start: () => {
+        const map = mapRef.current;
+        if (!map) return false;
+        startFlyover(map, true);
+        return true;
+      },
+      /** avance d'un pas de temps vidéo et attend que la carte soit rendue et les tuiles chargées */
+      step: (dt: number) =>
+        new Promise<{ done: boolean; t: number }>((resolve) => {
+          const map = mapRef.current;
+          const done = advance(dt);
+          if (!map) return resolve({ done: true, t: anim.current.t });
+          const finish = () => resolve({ done, t: anim.current.t });
+          const timer = window.setTimeout(finish, 4000); // garde-fou : tuile absente, réseau lent…
+          map.once("idle", () => {
+            window.clearTimeout(timer);
+            finish();
+          });
+          map.triggerRepaint();
+        }),
+      finish: () => {
+        const map = mapRef.current;
+        if (map) enterExplore(map);
+      },
+    };
+    (window as unknown as { __mf?: typeof api }).__mf = api;
+    return () => {
+      delete (window as unknown as { __mf?: typeof api }).__mf;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportMode, loaded]);
   const pause = () => {
     cancelAnimationFrame(rafRef.current);
     setMode("paused");
@@ -469,7 +523,7 @@ export default function MarathonFlyover({
   const lookBehind = Math.round(lookBehindOf(cam));
 
   return (
-    <div ref={rootRef} className={`mf-root ${inFlyover ? "mf-flyover" : ""}`} style={{ height }}>
+    <div ref={rootRef} className={`mf-root ${inFlyover ? "mf-flyover" : ""} ${exportMode ? "mf-export" : ""}`} style={{ height }}>
       <style>{CSS}</style>
       <div ref={containerRef} className="mf-map" />
 
@@ -569,7 +623,7 @@ export default function MarathonFlyover({
           <button className="mf-btn" onClick={() => mapRef.current && startFlyover(mapRef.current)}>▶ Survoler le parcours</button>
         )}
         {mode === "playing" && <button className="mf-btn" onClick={pause}>❚❚ Pause</button>}
-        {mode === "paused" && <button className="mf-btn primary" onClick={play}>▶ Reprendre</button>}
+        {mode === "paused" && <button className="mf-btn primary" onClick={() => play()}>▶ Reprendre</button>}
         {inFlyover && (
           <>
             <div className="mf-rates">
@@ -872,13 +926,16 @@ function applyCamera(
   map: GLMap,
   geo: Geo,
   d: number,
-  a: { camPos: [number, number] | null; camTgt: [number, number] | null },
+  a: { camPos: [number, number] | null; camTgt: [number, number] | null; rate: number },
   p: CamParams,
   dt: number
 ) {
   const pos = sampleAt(geo.smoothed, d - lookBehindOf(p));
   const tgt = sampleAt(geo.smoothed, d + p.lookAhead);
-  const k = a.camPos ? 1 - Math.exp(-dt / 0.8) : 1;
+  // Constante de temps ramenée à la vitesse de lecture : un filtre à τ fixe prend un retard
+  // proportionnel à la vitesse (v·τ ≈ 600 m à ×6). À τ = 0,8 s / rate, le retard reste ≈ 100 m.
+  const tau = 0.8 / Math.max(1, a.rate);
+  const k = a.camPos ? 1 - Math.exp(-dt / tau) : 1;
   a.camPos = a.camPos ? lerp(a.camPos, pos, k) : pos;
   a.camTgt = a.camTgt ? lerp(a.camTgt, tgt, k) : tgt;
   gl.lookFromTo(map, a.camPos, p.altitude, a.camTgt);
@@ -992,6 +1049,18 @@ const CSS = `
 .mf-splash-sur{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#d5dcea;margin-bottom:8px;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 .mf-splash-title{font-size:22px;font-weight:700;margin-top:6px;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 .mf-splash-alt{margin-top:14px}
+/* export vidéo : pas de commandes ni de sélecteur ; bandeau, bulles, coureur et timeline restent */
+.mf-export .mf-controls,.mf-export .mf-basemaps,.mf-export .mf-hint,.mf-export .mf-splash,.mf-export .mf-card-close,.mf-export .mapboxgl-ctrl-top-right,.mf-export .maplibregl-ctrl-top-right{display:none}
+/* 1080 px de large vus sur un téléphone : l'habillage est agrandi ~1,7× (zoom CSS, Chromium) */
+.mf-export .mf-top{padding:24px 22px 40px;background:linear-gradient(rgba(11,18,32,.85),transparent)}
+.mf-export .mf-kicker{font-size:24px;letter-spacing:.1em}
+.mf-export .mf-timeline{bottom:40px;left:24px;right:24px;zoom:1.7}
+.mf-export .mf-card{bottom:150px;left:24px;max-width:560px;zoom:1.6}
+.mf-export .mf-bubble{zoom:1.6}
+.mf-export .mf-runner{width:56px;height:56px}
+.mf-export .mf-runner svg{width:34px;height:34px}
+.mf-export .mapboxgl-ctrl-bottom-left,.mf-export .maplibregl-ctrl-bottom-left{bottom:120px}
+.mf-export .mapboxgl-ctrl-bottom-right,.mf-export .maplibregl-ctrl-bottom-right{bottom:120px}
 .mf-btn.icon{display:inline-flex;align-items:center;gap:6px;padding:8px 12px}
 .mf-btn.icon svg{width:16px;height:16px;display:block}
 .mf-fs{margin-left:auto}

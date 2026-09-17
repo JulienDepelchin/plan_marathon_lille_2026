@@ -3,3 +3,4 @@ dist
 .env
 raw/token_mapbox.txt
 raw/videoplayback.mp4
+sorties/

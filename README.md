@@ -107,6 +107,24 @@ Tout est dans `src/lib/engine.ts` ; seul le moteur choisi est téléchargé (cha
 Test local : `http://localhost:5173/?engine=maplibre`. Surveiller **Statistics** dans le compte Mapbox
 la semaine du marathon et basculer si nécessaire : une prop à changer dans `src/routes/index.tsx` côté Lovable.
 
+## 3 ter. Export vidéo vertical (1080×1920) du survol
+
+Rendu image par image : un Chromium piloté par Playwright ouvre la démo en mode export (`?export=1`,
+commandes masquées, habillage agrandi pour le mobile), fait avancer l'animation d'un pas fixe de 1/30 s,
+attend que Mapbox ait chargé et dessiné (`idle`), capture la page, et envoie les images à ffmpeg.
+Fluide et net quelle que soit la machine ; ~1,3 s par image en mode headless (≈ 40 min pour 60 s de vidéo).
+
+```bash
+npx playwright install chromium          # une fois (≈150 Mo, sans droits admin)
+npm run dev                              # dans un autre terminal
+node scripts/export-video.mjs --out sorties/survol-60s.mp4 --rate 6 --duration 60 --headless
+```
+
+Options : `--rate` (vitesse du survol : 2 = comme le site ≈ 3 min ; 6 ≈ 64 s), `--duration` (coupe à N s ; 0 = jusqu'à
+l'arrivée), `--fps`, `--width/--height`, `--engine maplibre`, `--intro/--outro` (secondes figées au début / à la fin).
+Sans `--headless`, une fenêtre Chromium s'ouvre et utilise la carte graphique (plus rapide).
+Les vidéos vont dans `sorties/` (ignoré par git). Attribution Mapbox/OSM conservée dans l'image (obligatoire).
+
 ## 4. Réglages (props)
 
 Trois états. **Accueil** (défaut) : vue d'ensemble du parcours, gros bouton play au centre pour lancer le survol, ou lien pour explorer directement. **Survol** : caméra qui suit le tracé, timeline, bouton « Explorer la carte » à tout moment. **Exploration** : tracé complet, points cliquables (fiche + zoom), vue libre, sélecteur de fond.

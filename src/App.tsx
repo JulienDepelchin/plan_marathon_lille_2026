@@ -1,9 +1,20 @@
-import MarathonFlyover from "./components/MarathonFlyover";
+import MarathonFlyover, { type Engine } from "./components/MarathonFlyover";
 
-/** Page de démo locale. Dans Lovable, importez directement <MarathonFlyover />. */
+/**
+ * Page de démo locale. Dans Lovable, importez directement <MarathonFlyover />.
+ *
+ * Paramètres d'URL utiles :
+ *   ?engine=maplibre   version sans Mapbox (OpenFreeMap + orthophoto IGN)
+ *   ?export=1          mode export vidéo (commandes masquées, API window.__mf) — voir scripts/export-video.mjs
+ *   &rate=6            multiplicateur de vitesse du survol en export (défaut 2)
+ */
 export default function App() {
   const token = import.meta.env["VITE_MAPBOX_TOKEN"] as string | undefined;
-  if (!token) {
+  const params = new URLSearchParams(window.location.search);
+  const engine: Engine = params.get("engine") === "maplibre" ? "maplibre" : "mapbox";
+  const exportMode = params.get("export") === "1";
+
+  if (!token && engine === "mapbox") {
     return (
       <div style={{ color: "#fff", fontFamily: "system-ui", padding: 32 }}>
         <h2>Token Mapbox manquant</h2>
@@ -14,8 +25,12 @@ export default function App() {
       </div>
     );
   }
-  // ?engine=maplibre pour tester la version sans Mapbox (OpenFreeMap + orthophoto IGN)
-  const engine = new URLSearchParams(window.location.search).get("engine") === "maplibre" ? "maplibre" : "mapbox";
+
+  if (exportMode) {
+    // la vidéo est cadrée par la taille de la fenêtre du navigateur piloté (1080×1920)
+    return <MarathonFlyover engine={engine} mapboxToken={token} exportMode startMode="explore" />;
+  }
+
   // debug : panneau de calibrage (fond de carte, caméra). À retirer pour la publication.
   return <MarathonFlyover engine={engine} mapboxToken={token} debug />;
 }
