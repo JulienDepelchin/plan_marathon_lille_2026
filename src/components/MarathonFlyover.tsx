@@ -90,6 +90,11 @@ export interface MarathonFlyoverProps {
   showKmMarkers?: boolean;
   /** Gestes coopératifs : zoom molette avec Ctrl/⌘, déplacement à deux doigts (indispensable en iframe) */
   cooperativeGestures?: boolean;
+  /**
+   * Bouton « Plein écran » (défaut : true). En iframe, l'attribut `allow="fullscreen"` est requis
+   * sur l'iframe. Sur iPhone (pas d'API Fullscreen), le bouton ouvre la carte dans un nouvel onglet.
+   */
+  showFullscreenButton?: boolean;
   /** Hauteur CSS du composant */
   height?: string;
   /** Liste des points (par défaut src/data/lieux.ts) */
@@ -154,12 +159,14 @@ export default function MarathonFlyover({
   smoothingWindow = 120,
   showKmMarkers = false,
   cooperativeGestures = true,
+  showFullscreenButton = true,
   height = "100vh",
   lieux = LIEUX,
   debug = false,
   onFinish,
 }: MarathonFlyoverProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const glRef = useRef<GL | null>(null);
   const mapRef = useRef<GLMap | null>(null);
   const rafRef = useRef<number>(0);
@@ -191,6 +198,33 @@ export default function MarathonFlyover({
   camRef.current = cam;
 
   useEffect(() => setCam({ altitude: cameraAltitude, pitch: cameraPitch, lookAhead }), [cameraAltitude, cameraPitch, lookAhead]);
+
+  // ── Plein écran ──
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => {
+      setIsFullscreen(fullscreenElement() === rootRef.current);
+      // la taille du conteneur change : on force le recalcul du canvas
+      requestAnimationFrame(() => mapRef.current?.resize());
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    document.addEventListener("webkitfullscreenchange", onChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      document.removeEventListener("webkitfullscreenchange", onChange);
+    };
+  }, []);
+  const toggleFullscreen = () => {
+    const el = rootRef.current;
+    if (!el) return;
+    if (!fullscreenSupported()) {
+      // iPhone : pas d'API Fullscreen pour un <div> → la carte seule dans un nouvel onglet
+      window.open(window.location.href, "_blank", "noopener");
+      return;
+    }
+    if (fullscreenElement()) void exitFullscreen();
+    else void requestFullscreen(el);
+  };
 
   // ── Géométrie précalculée (une seule fois) ──
   const geo = useMemo(() => {
@@ -421,7 +455,7 @@ export default function MarathonFlyover({
   const lookBehind = Math.round(lookBehindOf(cam));
 
   return (
-    <div className={`mf-root ${inFlyover ? "mf-flyover" : ""}`} style={{ height }}>
+    <div ref={rootRef} className={`mf-root ${inFlyover ? "mf-flyover" : ""}`} style={{ height }}>
       <style>{CSS}</style>
       <div ref={containerRef} className="mf-map" />
 
@@ -519,6 +553,17 @@ export default function MarathonFlyover({
             <button className="mf-btn ghost" onClick={() => mapRef.current && enterExplore(mapRef.current)}>Explorer la carte</button>
           </>
         )}
+        {loaded && showFullscreenButton && (
+          <button
+            className="mf-btn icon mf-fs"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Quitter le plein écran" : "Plein écran"}
+            aria-label={isFullscreen ? "Quitter le plein écran" : "Plein écran"}
+          >
+            <span dangerouslySetInnerHTML={{ __html: isFullscreen ? ICONS["fsExit"] ?? "" : ICONS["fsEnter"] ?? "" }} />
+            <span className="mf-fs-label">{isFullscreen ? "Quitter" : "Plein écran"}</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -538,6 +583,32 @@ function Slider(props: { label: string; unit: string; min: number; max: number; 
 
 // ───────────────────────── Helpers ─────────────────────────
 
+/* API Fullscreen, avec le préfixe webkit des anciens Safari. */
+type FsDoc = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void; webkitFullscreenEnabled?: boolean };
+type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+function fullscreenElement(): Element | null {
+  const d = document as FsDoc;
+  return d.fullscreenElement ?? d.webkitFullscreenElement ?? null;
+}
+function fullscreenSupported(): boolean {
+  const d = document as FsDoc;
+  return !!(d.fullscreenEnabled || d.webkitFullscreenEnabled);
+}
+async function requestFullscreen(el: HTMLElement) {
+  const e = el as FsEl;
+  try {
+    if (e.requestFullscreen) await e.requestFullscreen({ navigationUI: "hide" });
+    else if (e.webkitRequestFullscreen) await e.webkitRequestFullscreen();
+  } catch (err) {
+    console.warn("[MarathonFlyover] plein écran refusé (iframe sans allow=\"fullscreen\" ?)", err);
+  }
+}
+async function exitFullscreen() {
+  const d = document as FsDoc;
+  if (d.exitFullscreen) await d.exitFullscreen();
+  else if (d.webkitExitFullscreen) await d.webkitExitFullscreen();
+}
+
 /** Pictos inline (SVG, rendu identique sur tous les OS — contrairement aux emojis). */
 const SVG = (d: string) =>
   `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -549,6 +620,9 @@ const ICONS: Record<string, string> = {
   // drapeau à damier
   arrivee: SVG('<path d="M5 22V3"/><path d="M5 4h13l-2.5 4 2.5 4H5"/><path d="M8 4v8M11.5 4v8M15 4v8M5 6.7h13M5 9.3h11.5" stroke-width="1.2"/>'),
   lieu: "",
+  // plein écran : entrer / sortir
+  fsEnter: SVG('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
+  fsExit: SVG('<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'),
   // coureur (pictogramme)
   runner: SVG(
     '<circle cx="16" cy="4" r="2" fill="currentColor" stroke="none"/>' +
@@ -880,6 +954,11 @@ const CSS = `
 .mf-btn.small{padding:6px 10px;font-size:12px}
 .mf-btn.on{background:#fff;color:${BG};border-color:#fff}
 .mf-rates{display:flex;gap:4px}
+.mf-btn.icon{display:inline-flex;align-items:center;gap:6px;padding:8px 12px}
+.mf-btn.icon svg{width:16px;height:16px;display:block}
+.mf-fs{margin-left:auto}
+.mf-root:fullscreen{width:100vw;height:100vh;border-radius:0}
+@media (max-width:600px){.mf-fs-label{display:none}.mf-btn.icon{padding:9px}}
 .mf-loading{font-size:13px;color:#cfd8ea}
 .mf-error{font-size:13px;color:#ffb4a8;background:rgba(11,18,32,.85);padding:8px 12px;border-radius:6px}
 /* Bulles : carré arrondi + pointe, une seule forme (l'ombre portée suit le contour complet). */

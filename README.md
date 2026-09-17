@@ -130,6 +130,7 @@ ou en mode initial. Le survol peut donner le tournis : à réserver aux lecteurs
 | `lookAhead` | `260` m | survol : point visé devant le coureur ; le tracé se dessine jusque-là |
 | `showKmMarkers` | `false` | bornes km 1…N sur le tracé (masquées : notre mesure diffère de celle de l'organisateur) |
 | `cooperativeGestures` | `true` | zoom molette avec Ctrl/⌘ et déplacement à deux doigts : évite que la carte capture le défilement de l'article en iframe |
+| `showFullscreenButton` | `true` | bouton « Plein écran » (API Fullscreen sur le composant ; en iframe, `allow="fullscreen"` obligatoire ; sur iPhone, ouvre la carte dans un nouvel onglet) |
 | `smoothingWindow` | `120` m | survol : lissage de la trajectoire caméra (virages, demi-tours) |
 | `lieux` | `LIEUX` | liste alternative de lieux |
 | `debug` | `false` | curseurs de calibrage de la caméra de survol (ne pas publier) |
