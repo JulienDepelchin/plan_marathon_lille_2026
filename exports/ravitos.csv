@@ -1,0 +1,11 @@
+﻿id;type;nom;km;latitude;longitude
+depart;depart;Départ;0;50.628172;3.068723
+ravito-5;ravito;Ravitaillement km 5;5;50.634702;3.039747
+ravito-10;ravito;Ravitaillement km 10;10;50.621731;3.060197
+ravito-15;ravito;Ravitaillement km 15;15;50.602355;3.034231
+ravito-20;ravito;Ravitaillement km 20;20;50.580245;3.011755
+ravito-25;ravito;Ravitaillement km 25;25;50.549421;3.029277
+ravito-30;ravito;Ravitaillement km 30;30;50.590814;3.051165
+ravito-35;ravito;Ravitaillement km 35;35;50.622226;3.071882
+ravito-40;ravito;Ravitaillement km 40;40;50.629037;3.066736
+arrivee;arrivee;Arrivée;42.188;50.639305;3.050873

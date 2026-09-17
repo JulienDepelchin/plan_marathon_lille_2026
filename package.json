@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "data": "python scripts/gpx_to_geojson.py",
-    "export": "node scripts/export-lovable.mjs"
+    "export": "node scripts/export-lovable.mjs",
+    "export:ravitos": "python scripts/export_ravitos.py"
   },
   "dependencies": {
     "@turf/turf": "^7.2.0",

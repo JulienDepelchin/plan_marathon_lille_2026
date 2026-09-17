@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="La Voix du Nord - marathon de Lille 2026" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="50.628172" lon="3.068723"><name>Départ</name><desc>km 0</desc><type>depart</type></wpt>
+  <wpt lat="50.634702" lon="3.039747"><name>Ravitaillement km 5</name><desc>km 5</desc><type>ravito</type></wpt>
+  <wpt lat="50.621731" lon="3.060197"><name>Ravitaillement km 10</name><desc>km 10</desc><type>ravito</type></wpt>
+  <wpt lat="50.602355" lon="3.034231"><name>Ravitaillement km 15</name><desc>km 15</desc><type>ravito</type></wpt>
+  <wpt lat="50.580245" lon="3.011755"><name>Ravitaillement km 20</name><desc>km 20</desc><type>ravito</type></wpt>
+  <wpt lat="50.549421" lon="3.029277"><name>Ravitaillement km 25</name><desc>km 25</desc><type>ravito</type></wpt>
+  <wpt lat="50.590814" lon="3.051165"><name>Ravitaillement km 30</name><desc>km 30</desc><type>ravito</type></wpt>
+  <wpt lat="50.622226" lon="3.071882"><name>Ravitaillement km 35</name><desc>km 35</desc><type>ravito</type></wpt>
+  <wpt lat="50.629037" lon="3.066736"><name>Ravitaillement km 40</name><desc>km 40</desc><type>ravito</type></wpt>
+  <wpt lat="50.639305" lon="3.050873"><name>Arrivée</name><desc>km 42.188</desc><type>arrivee</type></wpt>
+</gpx>

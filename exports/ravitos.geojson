@@ -1,0 +1,165 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "depart",
+    "type": "depart",
+    "nom": "Départ",
+    "km": 0.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.068723,
+     50.628172
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "ravito-5",
+    "type": "ravito",
+    "nom": "Ravitaillement km 5",
+    "km": 5.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.039747,
+     50.634702
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "ravito-10",
+    "type": "ravito",
+    "nom": "Ravitaillement km 10",
+    "km": 10.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.060197,
+     50.621731
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "ravito-15",
+    "type": "ravito",
+    "nom": "Ravitaillement km 15",
+    "km": 15.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.034231,
+     50.602355
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "ravito-20",
+    "type": "ravito",
+    "nom": "Ravitaillement km 20",
+    "km": 20.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.011755,
+     50.580245
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "ravito-25",
+    "type": "ravito",
+    "nom": "Ravitaillement km 25",
+    "km": 25.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.029277,
+     50.549421
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "ravito-30",
+    "type": "ravito",
+    "nom": "Ravitaillement km 30",
+    "km": 30.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.051165,
+     50.590814
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "ravito-35",
+    "type": "ravito",
+    "nom": "Ravitaillement km 35",
+    "km": 35.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.071882,
+     50.622226
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "ravito-40",
+    "type": "ravito",
+    "nom": "Ravitaillement km 40",
+    "km": 40.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.066736,
+     50.629037
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "arrivee",
+    "type": "arrivee",
+    "nom": "Arrivée",
+    "km": 42.188
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.050873,
+     50.639305
+    ]
+   }
+  }
+ ]
+}
