@@ -476,7 +476,8 @@ export default function MarathonFlyover({
       {/* Bandeau titre */}
       <div className="mf-top">
         <div className="mf-title">
-          <span className="mf-kicker">Marathon de Lille 2026</span>
+          {/* en accueil, le titre est au centre : on ne le double pas dans le bandeau */}
+          <span className="mf-kicker">{mode === "ready" ? "" : "Marathon de Lille 2026"}</span>
           <span className="mf-hint">
             {inFlyover ? "Survol du parcours" : mode === "explore" ? "Cliquez sur un point, glissez, zoomez, clic droit pour pivoter" : ""}
           </span>
@@ -486,11 +487,11 @@ export default function MarathonFlyover({
       {/* Écran d'accueil : gros bouton play */}
       {loaded && mode === "ready" && (
         <div className="mf-splash">
+          <div className="mf-splash-sur">Marathon de Lille 2026</div>
           <button className="mf-play" onClick={() => mapRef.current && startFlyover(mapRef.current)} aria-label="Survoler le parcours">
             <span dangerouslySetInnerHTML={{ __html: ICONS["playBig"] ?? "" }} />
           </button>
           <div className="mf-splash-title">Survoler le parcours</div>
-          <div className="mf-splash-sub">42,195 km de Lille à Seclin, vus du ciel</div>
           <button className="mf-btn mf-splash-alt" onClick={() => mapRef.current && enterExplore(mapRef.current)}>
             Explorer la carte librement
           </button>
@@ -988,8 +989,8 @@ const CSS = `
 .mf-play{width:88px;height:88px;border-radius:50%;border:0;background:${VDN_BLUE};color:#fff;display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 24px rgba(8,84,232,.55),0 0 0 10px rgba(8,84,232,.18);transition:transform .15s,box-shadow .15s}
 .mf-play:hover{transform:scale(1.06);box-shadow:0 8px 28px rgba(8,84,232,.65),0 0 0 14px rgba(8,84,232,.2)}
 .mf-play svg{margin-left:4px}
+.mf-splash-sur{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#d5dcea;margin-bottom:8px;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 .mf-splash-title{font-size:22px;font-weight:700;margin-top:6px;text-shadow:0 1px 6px rgba(0,0,0,.6)}
-.mf-splash-sub{font-size:14px;color:#d5dcea;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 .mf-splash-alt{margin-top:14px}
 .mf-btn.icon{display:inline-flex;align-items:center;gap:6px;padding:8px 12px}
 .mf-btn.icon svg{width:16px;height:16px;display:block}
