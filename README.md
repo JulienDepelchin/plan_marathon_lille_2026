@@ -109,10 +109,14 @@ la semaine du marathon et basculer si nécessaire : une prop à changer dans `sr
 
 ## 3 ter. Export vidéo vertical (1080×1920) du survol
 
-Rendu image par image : un Chromium piloté par Playwright ouvre la démo en mode export (`?export=1`,
-commandes masquées, habillage agrandi pour le mobile), fait avancer l'animation d'un pas fixe de 1/30 s,
-attend que Mapbox ait chargé et dessiné (`idle`), capture la page, et envoie les images à ffmpeg.
-Fluide et net quelle que soit la machine ; ~1,3 s par image en mode headless (≈ 40 min pour 60 s de vidéo).
+**Outil d'atelier uniquement** : rien de tout ceci n'est dans le composant livré à Lovable. Le composant expose
+juste une poignée de pilotage générique (`controlRef`) ; le mode export (commandes masquées, habillage agrandi,
+API `window.__mf`) vit dans la page de démo `src/App.tsx`, activé par `?export=1`.
+
+Rendu image par image : un Chromium piloté par Playwright ouvre la démo en mode export, fait avancer l'animation
+d'un pas fixe de 1/30 s, attend que Mapbox ait chargé et dessiné (`idle`), capture la page, et envoie les images
+à ffmpeg. Fluide et net quelle que soit la machine ; ~1,4 s par image en mode headless (≈ 45 min pour 60 s de vidéo).
+Ne pas modifier `src/` pendant un rendu : le rechargement à chaud de Vite interromprait la capture.
 
 ```bash
 npx playwright install chromium          # une fois (≈150 Mo, sans droits admin)

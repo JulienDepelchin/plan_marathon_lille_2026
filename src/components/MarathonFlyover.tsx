@@ -15,7 +15,7 @@
  * mapbox-gl, maplibre-gl et @turf/turf, puis
  *   <MarathonFlyover mapboxToken="pk.…" height="100%" />
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type mapboxgl from "mapbox-gl";
 import type { Feature, LineString, FeatureCollection, Point } from "geojson";
 
@@ -108,11 +108,25 @@ export interface MarathonFlyoverProps {
   /** Panneau de calibrage de la caméra de survol — pour régler, pas pour publier */
   debug?: boolean;
   /**
-   * Mode export vidéo : masque les commandes, expose `window.__mf` (start/step/…) pour un
-   * navigateur piloté qui capture image par image (scripts/export-video.mjs). Jamais en production.
+   * Poignée de pilotage impérative (optionnelle) : démarrer le survol, l'avancer pas à pas,
+   * régler la vitesse, attendre le rendu. Sert aux tests et outils d'atelier ; inutile en production.
    */
-  exportMode?: boolean;
+  controlRef?: MutableRefObject<FlyoverControl | null>;
   onFinish?: () => void;
+}
+
+export interface FlyoverControl {
+  /** la carte est chargée et prête */
+  isReady: () => boolean;
+  /** durée totale du survol à ×1 (s) */
+  total: () => number;
+  setRate: (rate: number) => void;
+  /** lance le survol ; `manual` = sans boucle d'animation, à avancer avec `step` */
+  start: (manual?: boolean) => boolean;
+  /** avance de `dt` s (temps réel, la vitesse s'applique) puis attend que la carte soit rendue */
+  step: (dt: number) => Promise<{ done: boolean; t: number }>;
+  /** retour à l'exploration libre */
+  finish: () => void;
 }
 
 const PARCOURS = parcoursRaw as Feature<LineString>;
@@ -175,7 +189,7 @@ export default function MarathonFlyover({
   height = "100vh",
   lieux = LIEUX,
   debug = false,
-  exportMode = false,
+  controlRef,
   onFinish,
 }: MarathonFlyoverProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -462,33 +476,32 @@ export default function MarathonFlyover({
     if (!manual) rafRef.current = requestAnimationFrame(frame);
   };
 
-  // ── Mode export : API pilotable par un navigateur automatisé (scripts/export-video.mjs) ──
+  // ── Poignée de pilotage (tests, outils d'atelier) ──
   useEffect(() => {
-    if (!exportMode) return;
-    const api = {
+    if (!controlRef) return;
+    controlRef.current = {
       isReady: () => loaded,
       total: () => geoRef.current.timeline.total,
-      setRate: (r: number) => {
+      setRate: (r) => {
         anim.current.rate = r;
         setRate(r);
       },
-      start: () => {
+      start: (manual = false) => {
         const map = mapRef.current;
         if (!map) return false;
-        startFlyover(map, true);
+        startFlyover(map, manual);
         return true;
       },
-      /** avance d'un pas de temps vidéo et attend que la carte soit rendue et les tuiles chargées */
-      step: (dt: number) =>
-        new Promise<{ done: boolean; t: number }>((resolve) => {
+      step: (dt) =>
+        new Promise((resolve) => {
           const map = mapRef.current;
           const done = advance(dt);
           if (!map) return resolve({ done: true, t: anim.current.t });
-          const finish = () => resolve({ done, t: anim.current.t });
-          const timer = window.setTimeout(finish, 4000); // garde-fou : tuile absente, réseau lent…
+          const settle = () => resolve({ done, t: anim.current.t });
+          const timer = window.setTimeout(settle, 4000); // garde-fou : tuile absente, réseau lent…
           map.once("idle", () => {
             window.clearTimeout(timer);
-            finish();
+            settle();
           });
           map.triggerRepaint();
         }),
@@ -497,12 +510,11 @@ export default function MarathonFlyover({
         if (map) enterExplore(map);
       },
     };
-    (window as unknown as { __mf?: typeof api }).__mf = api;
     return () => {
-      delete (window as unknown as { __mf?: typeof api }).__mf;
+      controlRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exportMode, loaded]);
+  }, [controlRef, loaded]);
   const pause = () => {
     cancelAnimationFrame(rafRef.current);
     setMode("paused");
@@ -523,7 +535,7 @@ export default function MarathonFlyover({
   const lookBehind = Math.round(lookBehindOf(cam));
 
   return (
-    <div ref={rootRef} className={`mf-root ${inFlyover ? "mf-flyover" : ""} ${exportMode ? "mf-export" : ""}`} style={{ height }}>
+    <div ref={rootRef} className={`mf-root ${inFlyover ? "mf-flyover" : ""}`} style={{ height }}>
       <style>{CSS}</style>
       <div ref={containerRef} className="mf-map" />
 
@@ -1049,18 +1061,6 @@ const CSS = `
 .mf-splash-sur{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#d5dcea;margin-bottom:8px;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 .mf-splash-title{font-size:22px;font-weight:700;margin-top:6px;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 .mf-splash-alt{margin-top:14px}
-/* export vidéo : pas de commandes ni de sélecteur ; bandeau, bulles, coureur et timeline restent */
-.mf-export .mf-controls,.mf-export .mf-basemaps,.mf-export .mf-hint,.mf-export .mf-splash,.mf-export .mf-card-close,.mf-export .mapboxgl-ctrl-top-right,.mf-export .maplibregl-ctrl-top-right{display:none}
-/* 1080 px de large vus sur un téléphone : l'habillage est agrandi ~1,7× (zoom CSS, Chromium) */
-.mf-export .mf-top{padding:24px 22px 40px;background:linear-gradient(rgba(11,18,32,.85),transparent)}
-.mf-export .mf-kicker{font-size:24px;letter-spacing:.1em}
-.mf-export .mf-timeline{bottom:40px;left:24px;right:24px;zoom:1.7}
-.mf-export .mf-card{bottom:150px;left:24px;max-width:560px;zoom:1.6}
-.mf-export .mf-bubble{zoom:1.6}
-.mf-export .mf-runner{width:56px;height:56px}
-.mf-export .mf-runner svg{width:34px;height:34px}
-.mf-export .mapboxgl-ctrl-bottom-left,.mf-export .maplibregl-ctrl-bottom-left{bottom:120px}
-.mf-export .mapboxgl-ctrl-bottom-right,.mf-export .maplibregl-ctrl-bottom-right{bottom:120px}
 .mf-btn.icon{display:inline-flex;align-items:center;gap:6px;padding:8px 12px}
 .mf-btn.icon svg{width:16px;height:16px;display:block}
 .mf-fs{margin-left:auto}
