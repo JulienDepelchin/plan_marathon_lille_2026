@@ -86,6 +86,27 @@ Particularités du template Lovable (TanStack Start, React 19, TypeScript strict
   La colonne d'article fait 600-800 px : le composant y est en mode étroit quel que soit l'écran du lecteur
   (voir le skill `lovable-iframe`).
 
+## 3 bis. Plan B sans Mapbox : `engine="maplibre"`
+
+Mapbox est gratuit jusqu'à **50 000 chargements de carte par mois**, puis 5 $ les 1 000. Le composant embarque
+une sortie de secours prête à l'emploi : MapLibre GL JS + tuiles vectorielles **OpenFreeMap** (gratuit, sans clé,
+sans limite, usage commercial autorisé, pas de SLA) + orthophoto **IGN Géoplateforme** (sans clé, licence ouverte).
+
+```tsx
+<MarathonFlyover engine="maplibre" height="100%" />   // plus besoin de mapboxToken
+```
+
+| | Mapbox (défaut) | MapLibre |
+|---|---|---|
+| Fond « 3D » | Mapbox Standard : bâtiments détaillés, arbres, éclairage | OpenFreeMap *Liberty* + nos extrusions (hauteurs OSM), rendu plus plat |
+| Fond « Satellite » | Mapbox Satellite | Orthophoto IGN (meilleure résolution sur la France, pas de noms de rues) |
+| Survol, bulles, timeline, gestes coopératifs | identiques | identiques |
+| Coût / quota | 50 000 chargements/mois | aucun |
+
+Tout est dans `src/lib/engine.ts` ; seul le moteur choisi est téléchargé (chargement dynamique).
+Test local : `http://localhost:5173/?engine=maplibre`. Surveiller **Statistics** dans le compte Mapbox
+la semaine du marathon et basculer si nécessaire : une prop à changer dans `src/routes/index.tsx` côté Lovable.
+
 ## 4. Réglages (props)
 
 Deux modes. **Exploration** (défaut) : tracé complet, bornes et lieux cliquables (fiche + zoom), vue libre,

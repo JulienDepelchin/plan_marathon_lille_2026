@@ -1,25 +1,28 @@
 /**
  * MarathonFlyover — carte 3D du parcours du marathon de Lille 2026.
  *
- * Composant autonome (aucun backend) : Mapbox GL JS 3D + turf.js.
+ * Composant autonome (aucun backend) : Mapbox GL JS *ou* MapLibre GL JS (prop `engine`) + turf.js.
  * Deux modes :
- *  - « explore » (défaut) : tracé complet, bornes km et lieux cliquables, vue libre,
+ *  - « explore » (défaut) : tracé complet, points cliquables (départ, ravitos, arrivée), vue libre,
  *    sélecteur de fond de carte pour le lecteur ;
- *  - « flyover » (optionnel) : caméra libre (FreeCameraOptions) qui suit le tracé,
- *    révélation progressive, puis retour en exploration libre.
+ *  - « flyover » (optionnel) : caméra qui suit le tracé, révélation progressive, timeline,
+ *    puis retour en exploration libre.
  *
- * Intégration Lovable : copier src/components, src/lib et src/data,
- * ajouter les dépendances mapbox-gl et @turf/turf, puis
- *   <MarathonFlyover mapboxToken={import.meta.env.VITE_MAPBOX_TOKEN} />
+ * La bibliothèque cartographique est chargée dynamiquement, côté client uniquement
+ * (voir src/lib/engine.ts). Bascule Mapbox → MapLibre + OpenFreeMap/IGN : `engine="maplibre"`.
+ *
+ * Intégration Lovable : copier src/components, src/lib et src/data, ajouter les dépendances
+ * mapbox-gl, maplibre-gl et @turf/turf, puis
+ *   <MarathonFlyover mapboxToken="pk.…" height="100%" />
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import type mapboxgl from "mapbox-gl";
 import type { Feature, LineString, FeatureCollection, Point } from "geojson";
 
 import parcoursRaw from "../data/parcours.json";
 import kmRaw from "../data/km.json";
 import { LIEUX, type Lieu } from "../data/lieux";
+import { loadEngine, type Basemap, type Engine, type GL, type GLMap, type GLMarker } from "../lib/engine";
 import {
   resample,
   smooth,
@@ -32,25 +35,16 @@ import {
   type Timeline,
 } from "../lib/path";
 
+export type { Basemap, Engine };
+
 // ───────────────────────── Réglages ─────────────────────────
 const VDN_BLUE = "#0854e8";
 const BG = "#0b1220";
+const DEPART_COLOR = "#35b290";
+const ARRIVEE_COLOR = "#e8412c";
+const CASING = "rgba(255,255,255,0.9)";
+const EXPLORE_PITCH = 50;
 
-/**
- * Fonds de carte disponibles.
- *  - standard           : Mapbox Standard (bâtiments 3D détaillés, arbres, éclairage)
- *  - standard-satellite : Mapbox Standard Satellite (photo aérienne + bâtiments 3D + relief)
- *  - satellite          : Satellite Streets v12 + bâtiments extrudés « maison »
- *  - dark               : Dark v11 + bâtiments extrudés « maison » (bleu nuit, graphique)
- */
-export type Basemap = "standard" | "standard-satellite" | "satellite" | "light" | "dark";
-const STYLES: Record<Basemap, string> = {
-  standard: "mapbox://styles/mapbox/standard",
-  "standard-satellite": "mapbox://styles/mapbox/standard-satellite",
-  satellite: "mapbox://styles/mapbox/satellite-streets-v12",
-  light: "mapbox://styles/mapbox/light-v11",
-  dark: "mapbox://styles/mapbox/dark-v11",
-};
 const BASEMAP_LABELS: Record<Basemap, string> = {
   standard: "3D",
   "standard-satellite": "Satellite",
@@ -58,54 +52,47 @@ const BASEMAP_LABELS: Record<Basemap, string> = {
   light: "Clair",
   dark: "Nuit",
 };
-/** Fonds sans bâtiments 3D : on les regarde à plat (pitch 0). */
-const isFlat = (b: Basemap) => b === "standard-satellite" || b === "satellite";
-const EXPLORE_PITCH = 50;
-const DEPART_COLOR = "#35b290";
-const ARRIVEE_COLOR = "#e8412c";
 
 export interface MarathonFlyoverProps {
-  /** Token public Mapbox (pk.…) — voir README */
-  mapboxToken: string;
+  /** Moteur : "mapbox" (défaut, style Standard 3D) ou "maplibre" (OpenFreeMap + orthophoto IGN, sans clé) */
+  engine?: Engine;
+  /** Token public Mapbox (pk.…) — requis avec engine="mapbox", ignoré sinon */
+  mapboxToken?: string;
   /** Fonds proposés au lecteur, dans l'ordre des boutons. Le premier est le fond initial. */
   basemaps?: Basemap[];
   /** Fond initial (sinon le premier de `basemaps`) */
   basemap?: Basemap;
-  /** Préréglage lumière des styles Standard : "dawn" | "day" | "dusk" | "night" */
+  /** Préréglage lumière du style Mapbox Standard : "dawn" | "day" | "dusk" | "night" */
   lightPreset?: "dawn" | "day" | "dusk" | "night";
-  /** Thème des styles Standard : "default" | "faded" (désaturé, clair) | "monochrome" */
+  /** Thème du style Mapbox Standard : "default" | "faded" | "monochrome" */
   theme?: "default" | "faded" | "monochrome";
-  /** URL de style Mapbox personnalisée (désactive le sélecteur de fond) */
+  /** URL de style personnalisée (désactive le sélecteur de fond) */
   mapStyle?: string;
   /** Mode au chargement */
   startMode?: "explore" | "flyover";
   /** Propose le bouton « Survoler le parcours » en mode exploration */
   showFlyoverButton?: boolean;
-  /** Vitesse de croisière du survol (m/s) */
+  /** Vitesse de croisière du survol (m/s), à ×1 */
   baseSpeed?: number;
-  /** Vitesse à l'approche des lieux (m/s) */
+  /** Vitesse à l'approche des points (m/s) */
   slowSpeed?: number;
-  /** Rayon (m) de la zone de ralentissement autour d'un lieu */
+  /** Rayon (m) de la zone de ralentissement autour d'un point */
   slowRadius?: number;
   /** Altitude de la caméra de survol (m) */
   cameraAltitude?: number;
-  /** Inclinaison de la caméra (°) : 0 = vue du dessus, 60 = vue oblique, 80 = rasante */
+  /** Inclinaison de la caméra (°) : 0 = vue du dessus, 60 = oblique, 80 = rasante */
   cameraPitch?: number;
   /** Point visé devant le coureur (m) — le tracé apparaît jusque-là */
   lookAhead?: number;
   /** Demi-fenêtre de lissage de la trajectoire caméra (m) */
   smoothingWindow?: number;
-  /** Bornes kilométriques sur le tracé (désactivées par défaut : notre mesure n'est pas celle de l'organisateur) */
+  /** Bornes kilométriques sur le tracé (désactivées : notre mesure n'est pas celle de l'organisateur) */
   showKmMarkers?: boolean;
-  /**
-   * Gestes coopératifs (défaut : true) : zoom à la molette seulement avec Ctrl/⌘, déplacement
-   * à deux doigts sur mobile. Indispensable en iframe dans un article, sinon la carte capture
-   * le défilement de la page.
-   */
+  /** Gestes coopératifs : zoom molette avec Ctrl/⌘, déplacement à deux doigts (indispensable en iframe) */
   cooperativeGestures?: boolean;
   /** Hauteur CSS du composant */
   height?: string;
-  /** Liste des lieux (par défaut src/data/lieux.ts) */
+  /** Liste des points (par défaut src/data/lieux.ts) */
   lieux?: Lieu[];
   /** Panneau de calibrage de la caméra de survol — pour régler, pas pour publier */
   debug?: boolean;
@@ -129,24 +116,27 @@ interface CamParams {
   lookAhead: number;
 }
 
-/**
- * Recul de la caméra derrière le coureur, déduit du triangle altitude / pitch :
- * distance horizontale caméra→cible = altitude · tan(pitch), moins la visée devant.
- */
+/** Recul de la caméra derrière le coureur, déduit du triangle altitude / pitch. */
 function lookBehindOf(p: CamParams): number {
   const horiz = p.altitude * Math.tan((Math.min(85, Math.max(5, p.pitch)) * Math.PI) / 180);
   return Math.max(20, horiz - p.lookAhead);
 }
 
-const ROUTE_BOUNDS = (() => {
-  const c0 = PARCOURS.geometry.coordinates[0] as [number, number];
-  return PARCOURS.geometry.coordinates.reduce(
-    (b, c) => b.extend(c as [number, number]),
-    new mapboxgl.LngLatBounds(c0, c0)
-  );
+/** Emprise du tracé [[ouest, sud], [est, nord]] */
+const ROUTE_BOUNDS: [[number, number], [number, number]] = (() => {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const c of PARCOURS.geometry.coordinates) {
+    const [lng = 0, lat = 0] = c;
+    if (lng < w) w = lng;
+    if (lng > e) e = lng;
+    if (lat < s) s = lat;
+    if (lat > n) n = lat;
+  }
+  return [[w, s], [e, n]];
 })();
 
 export default function MarathonFlyover({
+  engine = "mapbox",
   mapboxToken,
   basemaps = ["standard", "standard-satellite"],
   basemap,
@@ -170,9 +160,11 @@ export default function MarathonFlyover({
   onFinish,
 }: MarathonFlyoverProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const glRef = useRef<GL | null>(null);
+  const mapRef = useRef<GLMap | null>(null);
   const rafRef = useRef<number>(0);
-  const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const markersRef = useRef<Map<string, GLMarker>>(new Map());
+  const runnerRef = useRef<GLMarker | null>(null);
 
   // état d'animation hors React (60 fps)
   const anim = useRef({
@@ -187,9 +179,9 @@ export default function MarathonFlyover({
   const modeRef = useRef<Mode>("explore");
   modeRef.current = mode;
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [km, setKm] = useState(0);
   const [rate, setRate] = useState(2);
-  const runnerRef = useRef<mapboxgl.Marker | null>(null);
   const [lieuActif, setLieuActif] = useState<LieuPlace | null>(null);
   const [basemapState, setBasemapState] = useState<Basemap>(basemap ?? basemaps[0] ?? "standard");
   const basemapRef = useRef<Basemap>(basemapState);
@@ -208,7 +200,6 @@ export default function MarathonFlyover({
     const places: LieuPlace[] = [];
     for (const l of lieux) {
       if (l.km != null) {
-        // point posé sur le tracé à la distance demandée (Infinity = arrivée)
         const d = Math.min(Math.max(0, l.km * 1000), total);
         places.push({ ...l, d, distToRoute: 0, coord: sampleAt(samples, d) });
       } else if (l.coord) {
@@ -228,68 +219,81 @@ export default function MarathonFlyover({
   const geoRef = useRef(geo);
   geoRef.current = geo;
 
-  // ── Carte (créée une fois ; le fond change via setStyle pour garder la vue) ──
+  const isFlat = (b: Basemap) => glRef.current?.isSatellite(b) ?? b.includes("satellite");
+
+  // ── Carte : chargement du moteur puis création (une fois ; le fond change via setStyle) ──
   useEffect(() => {
-    if (!containerRef.current) return;
-    mapboxgl.accessToken = mapboxToken;
-    const [startLng, startLat] = sampleAt(geo.samples, 0);
-    const start = { lng: startLng, lat: startLat };
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: mapStyle ?? STYLES[basemapRef.current],
-      center: [start.lng, start.lat],
-      zoom: 16.5,
-      pitch: 70,
-      bearing: 0,
-      antialias: true,
-      attributionControl: true,
-      cooperativeGestures,
-      locale: {
-        "ScrollZoomBlocker.CtrlMessage": "Ctrl + molette pour zoomer la carte",
-        "ScrollZoomBlocker.CmdMessage": "⌘ + molette pour zoomer la carte",
-        "TouchPanBlocker.Message": "Deux doigts pour déplacer la carte",
-        "NavigationControl.ZoomIn": "Zoom avant",
-        "NavigationControl.ZoomOut": "Zoom arrière",
-        "NavigationControl.ResetBearing": "Remettre le nord en haut",
-      },
-    });
-    mapRef.current = map;
+    const container = containerRef.current;
+    if (!container) return;
+    let cancelled = false;
+    let map: GLMap | null = null;
     let firstLoad = true;
 
-    map.on("style.load", () => {
-      const b = basemapRef.current;
-      const isStandard = !mapStyle && b.startsWith("standard");
-      const isSatellite = !mapStyle && b.includes("satellite");
-      setupStyle(map, { isStandard, isSatellite, isLight: b === "light", lightPreset, theme, showKmMarkers });
-
-      const g = geoRef.current;
-      if (modeRef.current === "explore") {
-        showEverything(map, g);
-      } else {
-        const d0 = distanceAtTime(g.samples, g.timeline, anim.current.t);
-        updateLayers(map, g, d0);
+    (async () => {
+      let gl: GL;
+      try {
+        gl = await loadEngine(engine);
+      } catch (e) {
+        console.error("[MarathonFlyover] moteur de carte indisponible", e);
+        setError("La carte n'a pas pu être chargée.");
+        return;
       }
-
-      if (firstLoad) {
-        firstLoad = false;
-        if (startMode === "flyover") startFlyover(map);
-        else enterExplore(map, true);
-        setLoaded(true);
+      if (cancelled) return;
+      if (engine === "mapbox" && !mapboxToken) {
+        setError("Token Mapbox manquant (prop mapboxToken).");
+        return;
       }
-    });
+      glRef.current = gl;
+      const [lng, lat] = sampleAt(geo.samples, 0);
+      map = gl.createMap({
+        container,
+        style: mapStyle ?? gl.styleFor(basemapRef.current),
+        center: [lng, lat],
+        zoom: 16.5,
+        pitch: 70,
+        bearing: 0,
+        cooperativeGestures,
+        accessToken: mapboxToken,
+      });
+      mapRef.current = map;
+
+      map.on("error", (e: { error?: { message?: string } }) => {
+        // tuiles 403 (restrictions d'URL), style introuvable… : on le dit plutôt que d'afficher un fond noir
+        const msg = e.error?.message ?? "";
+        if (/403|Forbidden|Unauthorized|401/i.test(msg)) setError("Fond de carte refusé (token / restrictions d'URL).");
+      });
+
+      map.on("style.load", () => {
+        if (!map) return;
+        const b = basemapRef.current;
+        setupStyle(gl, map, b, { custom: !!mapStyle, lightPreset, theme, showKmMarkers });
+
+        const g = geoRef.current;
+        if (modeRef.current === "explore") showEverything(map, g);
+        else updateLayers(map, g, distanceAtTime(g.samples, g.timeline, anim.current.t));
+
+        if (firstLoad) {
+          firstLoad = false;
+          if (startMode === "flyover") startFlyover(map);
+          else enterExplore(map, true);
+          setLoaded(true);
+        }
+      });
+    })();
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(rafRef.current);
       markersRef.current.forEach((m) => m.remove());
       markersRef.current.clear();
       runnerRef.current?.remove();
       runnerRef.current = null;
-      map.remove();
+      map?.remove();
       mapRef.current = null;
       setLoaded(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapboxToken, mapStyle]);
+  }, [engine, mapboxToken, mapStyle]);
 
   // ── Changement de fond : setStyle conserve caméra et marqueurs HTML ──
   const changeBasemap = (b: Basemap) => {
@@ -298,8 +302,10 @@ export default function MarathonFlyover({
     basemapRef.current = b;
     setBasemapState(b);
     const map = mapRef.current;
-    if (!map) return;
-    map.setStyle(STYLES[b]);
+    const gl = glRef.current;
+    if (!map || !gl) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    map.setStyle(gl.styleFor(b) as any);
     // en exploration : satellite → vue à plat, retour en 3D → on rebascule l'inclinaison
     if (modeRef.current === "explore") {
       if (isFlat(b)) map.easeTo({ pitch: 0, duration: 900 });
@@ -308,7 +314,9 @@ export default function MarathonFlyover({
   };
 
   // ───────────── Mode exploration ─────────────
-  const enterExplore = (map: mapboxgl.Map, initial = false) => {
+  const enterExplore = (map: GLMap, initial = false) => {
+    const gl = glRef.current;
+    if (!gl) return;
     cancelAnimationFrame(rafRef.current);
     setMode("explore");
     modeRef.current = "explore";
@@ -316,12 +324,11 @@ export default function MarathonFlyover({
     runnerRef.current?.remove();
     runnerRef.current = null;
     showEverything(map, geoRef.current);
-    ensureAllMarkers(map, geoRef.current, markersRef.current, (p) => {
+    ensureAllMarkers(gl, map, geoRef.current, markersRef.current, (p) => {
       setLieuActif(p);
-      const flat = isFlat(basemapRef.current);
-      map.flyTo({ center: p.coord, zoom: 16.5, pitch: flat ? 0 : 62, bearing: map.getBearing(), duration: 1800 });
+      map.flyTo({ center: p.coord, zoom: 16.5, pitch: isFlat(basemapRef.current) ? 0 : 62, bearing: map.getBearing(), duration: 1800 });
     });
-    setInteractive(map, true);
+    setInteractive(gl, map, true);
     map.fitBounds(ROUTE_BOUNDS, {
       padding: { top: 90, bottom: 80, left: 40, right: 40 },
       pitch: isFlat(basemapRef.current) ? 0 : EXPLORE_PITCH,
@@ -337,37 +344,36 @@ export default function MarathonFlyover({
     anim.current.t = timeAtDistance(g.samples, g.timeline, d);
     anim.current.camPos = null;
     anim.current.camTgt = null;
-    // on repart de zéro côté bulles : revealPlaces recrée instantanément celles déjà passées
     markersRef.current.forEach((m) => m.remove());
     markersRef.current.clear();
     if (mode !== "playing") play();
   };
 
   // ───────────── Mode survol ─────────────
-  const startFlyover = (map: mapboxgl.Map) => {
+  const startFlyover = (map: GLMap) => {
+    const gl = glRef.current;
+    if (!gl) return;
     anim.current.t = 0;
     anim.current.camPos = null;
     anim.current.camTgt = null;
     markersRef.current.forEach((m) => m.remove());
     markersRef.current.clear();
     setLieuActif(null);
-    setInteractive(map, false);
+    setInteractive(gl, map, false);
     updateLayers(map, geoRef.current, 0);
-    // coureur (marqueur HTML, picto sobre) posé sur le tracé
     if (!runnerRef.current) {
       const el = document.createElement("div");
       el.className = "mf-runner";
       el.innerHTML = ICONS["runner"] ?? "";
-      runnerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
-        .setLngLat(sampleAt(geoRef.current.samples, 0))
-        .addTo(map);
+      runnerRef.current = gl.marker(el, "center").setLngLat(sampleAt(geoRef.current.samples, 0)).addTo(map);
     }
     play();
   };
 
   const frame = (now: number) => {
     const map = mapRef.current;
-    if (!map) return;
+    const gl = glRef.current;
+    if (!map || !gl) return;
     const g = geoRef.current;
     const a = anim.current;
     const dt = a.last ? Math.min((now - a.last) / 1000, 0.1) : 0;
@@ -375,10 +381,10 @@ export default function MarathonFlyover({
     a.t += dt * a.rate;
 
     const d = distanceAtTime(g.samples, g.timeline, a.t);
-    applyCamera(map, g, d, a, camRef.current, dt);
+    applyCamera(gl, map, g, d, a, camRef.current, dt);
     updateLayers(map, g, d);
     runnerRef.current?.setLngLat(sampleAt(g.samples, d));
-    revealPlaces(map, g, d, markersRef.current, setLieuActif);
+    revealPlaces(gl, map, g, d, markersRef.current, setLieuActif);
     setKm(d / 1000);
 
     if (a.t >= g.timeline.total) {
@@ -468,7 +474,7 @@ export default function MarathonFlyover({
         </div>
       )}
 
-      {/* Fiche lieu */}
+      {/* Fiche point */}
       {lieuActif && (
         <div className="mf-card" key={lieuActif.id}>
           {mode === "explore" && (
@@ -487,14 +493,15 @@ export default function MarathonFlyover({
           <Slider label="Pitch" unit="°" min={20} max={80} step={1} value={cam.pitch} onChange={(v) => setCam({ ...cam, pitch: v })} />
           <Slider label="Visée devant" unit="m" min={50} max={1000} step={10} value={cam.lookAhead} onChange={(v) => setCam({ ...cam, lookAhead: v })} />
           <div className="mf-debug-out">
-            recul déduit ≈ {lookBehind} m — cameraAltitude={cam.altitude} cameraPitch={cam.pitch} lookAhead={cam.lookAhead}
+            recul déduit ≈ {lookBehind} m — cameraAltitude={cam.altitude} cameraPitch={cam.pitch} lookAhead={cam.lookAhead} engine={engine}
           </div>
         </div>
       )}
 
       {/* Contrôles */}
       <div className="mf-controls">
-        {!loaded && <span className="mf-loading">Chargement de la carte…</span>}
+        {error && <span className="mf-error">{error}</span>}
+        {!loaded && !error && <span className="mf-loading">Chargement de la carte…</span>}
         {loaded && mode === "explore" && showFlyoverButton && (
           <button className="mf-btn" onClick={() => mapRef.current && startFlyover(mapRef.current)}>▶ Survoler le parcours</button>
         )}
@@ -545,11 +552,11 @@ const ICONS: Record<string, string> = {
   // coureur (pictogramme)
   runner: SVG(
     '<circle cx="16" cy="4" r="2" fill="currentColor" stroke="none"/>' +
-      '<path d="M14.5 8.5 11.5 13"/>' + // buste
-      '<path d="M11.5 13 14 16.5 12 21"/>' + // jambe avant
-      '<path d="M11.5 13 8.5 16 5 15"/>' + // jambe arrière
-      '<path d="M14.5 8.5 18 11 20.5 9"/>' + // bras avant
-      '<path d="M14.5 8.5 11 10.5 9 8.5"/>' // bras arrière
+      '<path d="M14.5 8.5 11.5 13"/>' +
+      '<path d="M11.5 13 14 16.5 12 21"/>' +
+      '<path d="M11.5 13 8.5 16 5 15"/>' +
+      '<path d="M14.5 8.5 18 11 20.5 9"/>' +
+      '<path d="M14.5 8.5 11 10.5 9 8.5"/>'
   ),
 };
 
@@ -561,12 +568,19 @@ type Geo = {
   timeline: Timeline;
 };
 
-/** Ajoute fond 3D, tracé, bornes et coureur au style courant (appelé à chaque style.load). */
+/** Ajoute fond 3D, tracé, bornes et halo du coureur au style courant (appelé à chaque style.load). */
 function setupStyle(
-  map: mapboxgl.Map,
-  o: { isStandard: boolean; isSatellite: boolean; isLight: boolean; lightPreset: string; theme: string; showKmMarkers: boolean }
+  gl: GL,
+  map: GLMap,
+  b: Basemap,
+  o: { custom: boolean; lightPreset: string; theme: string; showKmMarkers: boolean }
 ) {
-  if (o.isStandard) {
+  const isStandard = !o.custom && gl.isStandard(b);
+  const isSatellite = !o.custom && gl.isSatellite(b);
+  const em = (props: Record<string, unknown>) =>
+    gl.supportsEmissive ? props : Object.fromEntries(Object.entries(props).filter(([k]) => !k.endsWith("emissive-strength")));
+
+  if (isStandard) {
     try {
       map.setConfigProperty("basemap", "lightPreset", o.lightPreset);
       map.setConfigProperty("basemap", "theme", o.theme);
@@ -576,24 +590,24 @@ function setupStyle(
       console.warn("[MarathonFlyover] config Standard non appliquée", e);
     }
   } else {
-    map.setFog(
-      o.isSatellite
-        ? { color: "#1a2238", "high-color": "#2b3a63", "horizon-blend": 0.06, "space-color": "#05070d", "star-intensity": 0 }
-        : o.isLight
-          ? { color: "#e9edf3", "high-color": "#c7d3e6", "horizon-blend": 0.05, "space-color": "#9fb3d1", "star-intensity": 0 }
-          : { color: BG, "high-color": "#101a33", "horizon-blend": 0.08, "space-color": "#05070d", "star-intensity": 0 }
-    );
-    addBuildings(map, o.isSatellite ? "satellite" : o.isLight ? "light" : "dark");
+    if (gl.supportsFog) {
+      map.setFog(
+        isSatellite
+          ? { color: "#1a2238", "high-color": "#2b3a63", "horizon-blend": 0.06, "space-color": "#05070d", "star-intensity": 0 }
+          : b === "light"
+            ? { color: "#e9edf3", "high-color": "#c7d3e6", "horizon-blend": 0.05, "space-color": "#9fb3d1", "star-intensity": 0 }
+            : { color: BG, "high-color": "#101a33", "horizon-blend": 0.08, "space-color": "#05070d", "star-intensity": 0 }
+      );
+    }
+    addBuildings(gl, map, b);
   }
 
-  const slotMid = o.isStandard ? { slot: "middle" as const } : {};
-  const slotTop = o.isStandard ? { slot: "top" as const } : {};
-  const labelLayer = o.isStandard ? undefined : firstLabelLayer(map);
-  const start = PARCOURS.geometry.coordinates[0] as [number, number];
+  const slotMid = isStandard ? { slot: "middle" as const } : {};
+  const slotTop = isStandard ? { slot: "top" as const } : {};
+  const labelLayer = isStandard ? undefined : firstLabelLayer(map);
 
   if (!map.getSource("parcours")) map.addSource("parcours", { type: "geojson", data: PARCOURS, lineMetrics: true });
-  // Liseré blanc + trait bleu opaque. `emissive-strength: 1` = couleur pleine quel que soit
-  // l'éclairage du style Standard (sinon le crépuscule « dusk » assombrit le bleu).
+  // Liseré blanc + trait bleu opaque. `emissive-strength: 1` (Mapbox) = couleur pleine quel que soit l'éclairage.
   map.addLayer(
     {
       id: "parcours-casing",
@@ -601,12 +615,12 @@ function setupStyle(
       source: "parcours",
       ...slotMid,
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: {
+      paint: em({
         "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4, 14, 8, 17, 13],
         "line-gradient": gradient(0, CASING),
         "line-emissive-strength": 1,
-      } as any,
-    },
+      }),
+    } as mapboxgl.AnyLayer,
     labelLayer
   );
   map.addLayer(
@@ -616,30 +630,31 @@ function setupStyle(
       source: "parcours",
       ...slotMid,
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: {
+      paint: em({
         "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 14, 5, 17, 8],
         "line-gradient": gradient(0),
         "line-emissive-strength": 1,
-      } as any,
-    },
+      }),
+    } as mapboxgl.AnyLayer,
     labelLayer
   );
 
-  if (o.showKmMarkers) addKmLayers(map, slotTop);
+  if (o.showKmMarkers) addKmLayers(gl, map, slotTop, em);
 
   // halo au sol sous le coureur (le coureur lui-même est un marqueur HTML, voir startFlyover)
-  if (!map.getSource("runner")) map.addSource("runner", { type: "geojson", data: pointFC(start) });
+  const c0 = PARCOURS.geometry.coordinates[0] ?? [0, 0];
+  if (!map.getSource("runner")) map.addSource("runner", { type: "geojson", data: pointFC([c0[0] ?? 0, c0[1] ?? 0]) });
   map.addLayer({
     id: "runner-halo",
     type: "circle",
     source: "runner",
     ...slotTop,
-    paint: { "circle-radius": 22, "circle-color": VDN_BLUE, "circle-opacity": 0.35, "circle-blur": 0.9, "circle-emissive-strength": 1 } as any,
-  });
+    paint: em({ "circle-radius": 22, "circle-color": VDN_BLUE, "circle-opacity": 0.35, "circle-blur": 0.9, "circle-emissive-strength": 1 }),
+  } as mapboxgl.AnyLayer);
 }
 
 /** Bornes km 1…N (optionnelles). */
-function addKmLayers(map: mapboxgl.Map, slotTop: { slot?: "top" }) {
+function addKmLayers(gl: GL, map: GLMap, slotTop: { slot?: "top" }, em: (p: Record<string, unknown>) => Record<string, unknown>) {
   if (!map.getSource("km")) map.addSource("km", { type: "geojson", data: KM });
   map.addLayer({
     id: "km-circle",
@@ -647,15 +662,15 @@ function addKmLayers(map: mapboxgl.Map, slotTop: { slot?: "top" }) {
     source: "km",
     ...slotTop,
     filter: ["<=", ["get", "km"], 0],
-    paint: {
+    paint: em({
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 6, 15, 11],
       "circle-color": "#ffffff",
       "circle-stroke-color": VDN_BLUE,
       "circle-stroke-width": 3,
       "circle-pitch-alignment": "map",
       "circle-emissive-strength": 1,
-    } as any,
-  });
+    }),
+  } as mapboxgl.AnyLayer);
   map.addLayer({
     id: "km-label",
     type: "symbol",
@@ -665,16 +680,16 @@ function addKmLayers(map: mapboxgl.Map, slotTop: { slot?: "top" }) {
     layout: {
       "text-field": ["get", "label"],
       "text-size": ["interpolate", ["linear"], ["zoom"], 11, 9, 15, 12],
-      "text-font": ["DIN Pro Bold", "Arial Unicode MS Bold"],
+      "text-font": gl.fontStack,
       "text-allow-overlap": true,
       "text-pitch-alignment": "map",
     },
     paint: { "text-color": VDN_BLUE },
-  });
+  } as mapboxgl.AnyLayer);
 }
 
 /** Mode exploration : tout le tracé, toutes les bornes, pas de coureur. */
-function showEverything(map: mapboxgl.Map, geo: Geo) {
+function showEverything(map: GLMap, geo: Geo) {
   if (!map.getLayer("parcours-line")) return;
   map.setPaintProperty("parcours-line", "line-gradient", gradient(1));
   map.setPaintProperty("parcours-casing", "line-gradient", gradient(1, CASING));
@@ -686,13 +701,18 @@ function showEverything(map: mapboxgl.Map, geo: Geo) {
   void geo;
 }
 
-function firstLabelLayer(map: mapboxgl.Map): string | undefined {
+function firstLabelLayer(map: GLMap): string | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return map.getStyle().layers?.find((l) => l.type === "symbol" && (l.layout as any)?.["text-field"])?.id;
 }
 
-/** Bâtiments extrudés depuis la source composite des styles classiques (dark, satellite-streets…). */
-function addBuildings(map: mapboxgl.Map, look: "satellite" | "light" | "dark") {
-  if (!map.getSource("composite") || map.getLayer("vdn-3d-buildings")) return;
+/** Bâtiments extrudés aux couleurs VDN, depuis la source de bâtiments du style courant. */
+function addBuildings(gl: GL, map: GLMap, b: Basemap) {
+  if (map.getLayer("vdn-3d-buildings")) return;
+  const src = gl.buildings(map, b);
+  if (!src) return;
+  for (const id of src.hideLayers) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+  const look = gl.isSatellite(b) ? "satellite" : b === "light" || (gl.engine === "maplibre" && b === "standard") ? "light" : "dark";
   const RAMPS: Record<typeof look, [string, string, string]> = {
     satellite: ["#8d93a0", "#a7adba", "#c4c9d4"],
     light: ["#d3d8e2", "#e1e5ec", "#eef0f4"],
@@ -702,24 +722,22 @@ function addBuildings(map: mapboxgl.Map, look: "satellite" | "light" | "dark") {
   map.addLayer(
     {
       id: "vdn-3d-buildings",
-      source: "composite",
-      "source-layer": "building",
-      filter: ["==", "extrude", "true"],
+      source: src.source,
+      "source-layer": src.sourceLayer,
+      filter: gl.engine === "mapbox" ? ["==", "extrude", "true"] : ["!=", ["get", "hide_3d"], true],
       type: "fill-extrusion",
       minzoom: 13,
       paint: {
-        "fill-extrusion-color": ["interpolate", ["linear"], ["get", "height"], 0, ramps[0], 30, ramps[1], 80, ramps[2]],
-        "fill-extrusion-height": ["get", "height"],
-        "fill-extrusion-base": ["get", "min_height"],
+        "fill-extrusion-color": ["interpolate", ["linear"], src.height, 0, ramps[0], 30, ramps[1], 80, ramps[2]],
+        "fill-extrusion-height": src.height,
+        "fill-extrusion-base": src.base,
         "fill-extrusion-opacity": look === "satellite" ? 0.7 : 0.92,
         "fill-extrusion-vertical-gradient": true,
       },
-    },
+    } as mapboxgl.AnyLayer,
     firstLabelLayer(map)
   );
 }
-
-const CASING = "rgba(255,255,255,0.9)";
 
 /** Dégradé « parcouru / pas encore » : couleur pleine jusqu'à la fraction p, transparent ensuite. */
 function gradient(p: number, color = VDN_BLUE): mapboxgl.Expression {
@@ -740,14 +758,13 @@ function pointFC(c: [number, number]): FeatureCollection<Point> {
 }
 
 /**
- * Caméra libre façon « Animate the camera along a path » (Mapbox) :
- * cible    = trajectoire lissée, `lookAhead` m devant le coureur, au sol ;
- * position = trajectoire lissée, à `altitude` m, reculée de sorte que l'angle caméra→cible
- *            vaille `pitch` (recul = altitude·tan(pitch) − lookAhead).
+ * Caméra de survol : cible = point lissé `lookAhead` m devant le coureur, au sol ;
+ * position = point lissé à `altitude` m, reculée de sorte que l'angle vaille `pitch`.
  * Lissage exponentiel (τ = 0,8 s) pour absorber virages serrés et demi-tours.
  */
 function applyCamera(
-  map: mapboxgl.Map,
+  gl: GL,
+  map: GLMap,
   geo: Geo,
   d: number,
   a: { camPos: [number, number] | null; camTgt: [number, number] | null },
@@ -759,11 +776,7 @@ function applyCamera(
   const k = a.camPos ? 1 - Math.exp(-dt / 0.8) : 1;
   a.camPos = a.camPos ? lerp(a.camPos, pos, k) : pos;
   a.camTgt = a.camTgt ? lerp(a.camTgt, tgt, k) : tgt;
-
-  const cam = map.getFreeCameraOptions();
-  cam.position = mapboxgl.MercatorCoordinate.fromLngLat(a.camPos, p.altitude);
-  cam.lookAtPoint(a.camTgt);
-  map.setFreeCameraOptions(cam);
+  gl.lookFromTo(map, a.camPos, p.altitude, a.camTgt);
 }
 
 function lerp(a: [number, number], b: [number, number], k: number): [number, number] {
@@ -771,7 +784,7 @@ function lerp(a: [number, number], b: [number, number], k: number): [number, num
 }
 
 /** Mode survol : révélation progressive. */
-function updateLayers(map: mapboxgl.Map, geo: Geo, d: number) {
+function updateLayers(map: GLMap, geo: Geo, d: number) {
   if (!map.getLayer("parcours-line")) return;
   map.setPaintProperty("parcours-line", "line-gradient", gradient(d / geo.total));
   map.setPaintProperty("parcours-casing", "line-gradient", gradient(d / geo.total, CASING));
@@ -781,55 +794,56 @@ function updateLayers(map: mapboxgl.Map, geo: Geo, d: number) {
     map.setFilter("km-label", ["<=", ["get", "km"], kmDone]);
   }
   map.setLayoutProperty("runner-halo", "visibility", "visible");
-  (map.getSource("runner") as mapboxgl.GeoJSONSource)?.setData(pointFC(sampleAt(geo.samples, d)));
+  (map.getSource("runner") as mapboxgl.GeoJSONSource | undefined)?.setData(pointFC(sampleAt(geo.samples, d)));
 }
 
-function makeMarker(map: mapboxgl.Map, p: LieuPlace, onClick?: (p: LieuPlace) => void): mapboxgl.Marker {
+function makeMarker(gl: GL, map: GLMap, p: LieuPlace, onClick?: (p: LieuPlace) => void): GLMarker {
   const el = document.createElement("div");
   const type = p.type ?? "lieu";
   el.className = `mf-marker mf-${type}` + (onClick ? " clickable" : "");
   const label = type === "ravito" && p.km != null ? `km ${p.km}` : p.nom;
-  // bulle = carré arrondi + pointe (::after), la pointe touche exactement le lieu (anchor bottom)
   el.innerHTML = `<div class="mf-bubble">${ICONS[type] ?? ""}<span>${label}</span></div>`;
   if (onClick) el.addEventListener("click", (e) => { e.stopPropagation(); onClick(p); });
-  return new mapboxgl.Marker({ element: el, anchor: "bottom" }).setLngLat(p.coord).addTo(map);
+  return gl.marker(el, "bottom").setLngLat(p.coord).addTo(map);
 }
 
 /** Exploration : tous les marqueurs, cliquables. */
-function ensureAllMarkers(map: mapboxgl.Map, geo: Geo, markers: Map<string, mapboxgl.Marker>, onClick: (p: LieuPlace) => void) {
+function ensureAllMarkers(gl: GL, map: GLMap, geo: Geo, markers: Map<string, GLMarker>, onClick: (p: LieuPlace) => void) {
   markers.forEach((m) => m.remove());
   markers.clear();
-  for (const p of geo.places) markers.set(p.id, makeMarker(map, p, onClick));
+  for (const p of geo.places) markers.set(p.id, makeMarker(gl, map, p, onClick));
 }
 
-/** Survol : les marqueurs apparaissent 150 m avant le lieu, la fiche s'affiche au passage. */
+/** Survol : la bulle surgit quand le coureur arrive dessus (60 m avant) et reste ensuite. */
 function revealPlaces(
-  map: mapboxgl.Map,
+  gl: GL,
+  map: GLMap,
   geo: Geo,
   d: number,
-  markers: Map<string, mapboxgl.Marker>,
+  markers: Map<string, GLMarker>,
   setActive: (p: LieuPlace | null) => void
 ) {
   let active: LieuPlace | null = null;
   for (const p of geo.places) {
-    // la bulle surgit quand le coureur arrive dessus (60 m avant), et reste ensuite
-    if (d >= p.d - 60 && !markers.has(p.id)) markers.set(p.id, makeMarker(map, p));
+    if (d >= p.d - 60 && !markers.has(p.id)) markers.set(p.id, makeMarker(gl, map, p));
     if (d >= p.d - 60 && d <= p.d + 400) active = p;
   }
   setActive(active);
 }
 
-function setInteractive(map: mapboxgl.Map, on: boolean) {
+function setInteractive(gl: GL, map: GLMap, on: boolean) {
   const handlers = [map.dragPan, map.scrollZoom, map.dragRotate, map.touchZoomRotate, map.keyboard, map.doubleClickZoom, map.boxZoom];
   handlers.forEach((h) => (on ? h.enable() : h.disable()));
-  const has = (map as any)._vdnNav as mapboxgl.NavigationControl | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const store = map as any;
+  const has = store._vdnNav as mapboxgl.IControl | undefined;
   if (on && !has) {
-    const nav = new mapboxgl.NavigationControl({ visualizePitch: true });
+    const nav = gl.navigationControl();
     map.addControl(nav, "bottom-right");
-    (map as any)._vdnNav = nav;
+    store._vdnNav = nav;
   } else if (!on && has) {
     map.removeControl(has);
-    (map as any)._vdnNav = undefined;
+    store._vdnNav = undefined;
   }
 }
 
@@ -854,7 +868,6 @@ const CSS = `
 .mf-card{position:absolute;left:16px;bottom:76px;max-width:340px;padding:12px 40px 12px 16px;background:rgba(11,18,32,.88);backdrop-filter:blur(6px);border-left:4px solid ${VDN_BLUE};border-radius:4px;animation:mf-in .4s ease}
 .mf-card-close{position:absolute;top:6px;right:8px;border:0;background:transparent;color:#8a97b3;font-size:20px;line-height:1;cursor:pointer}
 .mf-card-close:hover{color:#fff}
-.mf-card-km{font-size:12px;color:${VDN_BLUE};font-weight:700;letter-spacing:.05em}
 .mf-card-nom{font-size:19px;font-weight:700;margin:2px 0 4px}
 .mf-card-desc{font-size:14px;line-height:1.35;color:#d5dcea}
 .mf-card-hors{font-size:12px;color:#8a97b3;margin-top:4px;font-style:italic}
@@ -868,8 +881,8 @@ const CSS = `
 .mf-btn.on{background:#fff;color:${BG};border-color:#fff}
 .mf-rates{display:flex;gap:4px}
 .mf-loading{font-size:13px;color:#cfd8ea}
-/* Bulles : carré arrondi + pointe, une seule forme (l'ombre portée suit le contour complet). La pointe
-   touche le lieu : le wrapper garde 8px de marge basse pour l'accueillir (anchor: bottom). */
+.mf-error{font-size:13px;color:#ffb4a8;background:rgba(11,18,32,.85);padding:8px 12px;border-radius:6px}
+/* Bulles : carré arrondi + pointe, une seule forme (l'ombre portée suit le contour complet). */
 .mf-marker{padding-bottom:8px;pointer-events:none;animation:mf-in .5s ease;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))}
 .mf-marker.clickable{pointer-events:auto;cursor:pointer}
 .mf-bubble{position:relative;display:flex;align-items:center;gap:5px;background:#fff;color:#1c2a44;font:700 12px/1 "Source Sans 3","Helvetica Neue",Arial,sans-serif;padding:6px 9px;border-radius:7px;white-space:nowrap;transition:background .15s,color .15s}
@@ -880,7 +893,6 @@ const CSS = `
 .mf-marker.clickable:hover .mf-bubble svg{color:#fff}
 .mf-runner{width:36px;height:36px;border-radius:50%;background:#fff;color:${VDN_BLUE};display:grid;place-items:center;box-shadow:0 2px 6px rgba(0,0,0,.45);z-index:3}
 .mf-runner svg{width:22px;height:22px}
-/* Départ (vert) et arrivée (rouge) passent devant les bulles de ravito (z-index sur l'élément du marqueur) */
 .mf-depart,.mf-arrivee{z-index:2}
 .mf-depart .mf-bubble,.mf-arrivee .mf-bubble{color:#fff;font-size:13px;text-transform:uppercase;letter-spacing:.06em;padding:7px 11px}
 .mf-depart .mf-bubble svg,.mf-arrivee .mf-bubble svg{color:#fff}
@@ -899,6 +911,6 @@ const CSS = `
 .mf-slider input{width:100%;accent-color:${VDN_BLUE}}
 .mf-slider output{text-align:right;font-variant-numeric:tabular-nums}
 .mf-debug-out{color:#8a97b3;font-size:11px;line-height:1.4;user-select:all}
-.mapboxgl-ctrl-bottom-right{bottom:60px}
+.mapboxgl-ctrl-bottom-right,.maplibregl-ctrl-bottom-right{bottom:60px}
 @media (max-width:600px){.mf-card{max-width:calc(100% - 32px);bottom:96px}.mf-flyover .mf-card{bottom:150px}.mf-hint{display:none}.mf-debug{display:none}.mf-basemaps{top:50px}}
 `;

@@ -14,6 +14,8 @@ export default function App() {
       </div>
     );
   }
+  // ?engine=maplibre pour tester la version sans Mapbox (OpenFreeMap + orthophoto IGN)
+  const engine = new URLSearchParams(window.location.search).get("engine") === "maplibre" ? "maplibre" : "mapbox";
   // debug : panneau de calibrage (fond de carte, caméra). À retirer pour la publication.
-  return <MarathonFlyover mapboxToken={token} debug />;
+  return <MarathonFlyover engine={engine} mapboxToken={token} debug />;
 }
