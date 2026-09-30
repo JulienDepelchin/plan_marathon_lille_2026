@@ -58,9 +58,16 @@ function ExportPage({ engine, token }: { engine: Engine; token: string | undefin
     const v = Number(q.get(k));
     return q.has(k) && Number.isFinite(v) ? v : def;
   };
+  // ?avatar=/fichier.jpg : photo à la place du picto coureur (exports vidéo uniquement)
+  const avatar = q.get("avatar");
+  const avatarCss =
+    avatar && /^\/[\w.-]+$/.test(avatar)
+      ? `.export-root .mf-runner{width:84px;height:84px;background:#fff url("${avatar}") center/cover no-repeat;border:4px solid #fff;box-shadow:0 0 0 3px #0854e8,0 3px 10px rgba(0,0,0,.5)}
+.export-root .mf-runner svg{display:none}`
+      : "";
   return (
     <div className="export-root">
-      <style>{EXPORT_CSS}</style>
+      <style>{EXPORT_CSS + avatarCss}</style>
       <MarathonFlyover
         engine={engine}
         mapboxToken={token}

@@ -132,6 +132,7 @@ pitch que le site, visée rapprochée (le coureur reste au centre, le tracé dé
 mesurée sur le tracé). Durées à ×4 : ≈ 2 min 45 ; à ×6 : ≈ 1 min 50. Attention : avec un pitch constant, l'altitude
 fixe la distance caméra→cible (`altitude·tan(pitch)`, 1,2 km à 450 m / 70°) ; à 700 m la vue devient panoramique.
 Sans `--headless`, une fenêtre Chromium s'ouvre et utilise la carte graphique (plus rapide).
+Option `--avatar raw/photo.jpg` : la photo (recadrée en rond, liseré blanc et bleu VDN) remplace le picto coureur, dans les vidéos seulement ; l'appli garde le picto. La copie dans `public/` est ignorée par git ; ne pas committer la photo elle-même.
 Les vidéos vont dans `sorties/` (ignoré par git). Attribution Mapbox/OSM conservée dans l'image (obligatoire).
 
 ## 4. Réglages (props)

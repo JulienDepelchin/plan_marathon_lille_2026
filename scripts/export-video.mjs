@@ -7,7 +7,7 @@
  * Usage :
  *   node scripts/export-video.mjs [--out sorties/survol.mp4] [--width 1080] [--height 1920]
  *                                 [--fps 30] [--rate 6] [--duration 60] [--engine mapbox|maplibre]
- *                                 [--intro 1.5] [--outro 2] [--headless]
+ *                                 [--intro 1.5] [--outro 2] [--headless] [--avatar photo.jpg]
  *
  *   --rate      multiplicateur de vitesse du survol (2 = comme le site ; 4 recommandé pour la vidéo)
  *   --altitude --pitch --lookahead --smoothing --slowdown --lift : caméra du préréglage vidéo
@@ -23,8 +23,8 @@
  * envoyées à ffmpeg par un tube : rien n'est écrit sur disque à part le .mp4 final.
  */
 import { spawn } from "node:child_process";
-import { mkdirSync, existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, existsSync, copyFileSync } from "node:fs";
+import { dirname, extname, resolve } from "node:path";
 import { chromium } from "playwright";
 
 const args = Object.fromEntries(
@@ -45,7 +45,20 @@ const CAM = ["altitude", "pitch", "lookahead", "smoothing", "slowdown", "lift"]
   .filter((k) => args[k] != null)
   .map((k) => `&${k}=${encodeURIComponent(args[k])}`)
   .join("");
-const URL = `http://localhost:5173/?export=1&engine=${ENGINE}${CAM}`;
+// --avatar chemin/photo.jpg : la photo remplace le picto coureur (copiée dans public/, ignorée par git)
+let AVATAR = "";
+if (args.avatar) {
+  const src = resolve(args.avatar);
+  if (!existsSync(src)) {
+    console.error(`Photo introuvable : ${src}`);
+    process.exit(1);
+  }
+  const name = `_avatar${extname(src).toLowerCase() || ".jpg"}`;
+  mkdirSync(resolve("public"), { recursive: true });
+  copyFileSync(src, resolve("public", name));
+  AVATAR = `&avatar=/${name}`;
+}
+const URL = `http://localhost:5173/?export=1&engine=${ENGINE}${CAM}${AVATAR}`;
 
 function ffmpegPath() {
   if (process.env.FFMPEG) return process.env.FFMPEG;
