@@ -81,3 +81,25 @@ Cohérent à quelques centaines de mètres près, ce qui est l'ordre de grandeur
 ## Passages devant les lieux (v2)
 Vieille Bourse km 2,8 et 38,7 · Grand-Place km 2,9 et 38,8 · gare Lille-Flandres km 2,4 et 38,3 ·
 Beaux-Arts km 40,1 et 41,3 · Porte de Paris km 0, 40,4 et 40,9 · Jardin Vauban km 4,4 et 7,4 · Seclin km 25,4.
+
+---
+
+# Tracé officiel — `raw/parcours_marathon_lille_2026-24554049-1790756619-103.gpx` (30/09/2026)
+
+Publié par l'organisateur, export Openrunner. **Remplace la v3** (archivée dans `raw/archive/`).
+
+- 538 points, **42,494 km** (mesure dans l'axe des rues, d'où l'écart avec les 42,195 km homologués).
+- Cohérence : distance cumulée strictement croissante, aucun doublon, aucun demi-tour. 74 segments > 150 m
+  (lignes droites Openrunner sur des rues droites, sans écart de voirie : voir comparaison ci-dessous).
+- Horodatages présents mais fictifs (date de l'export), non utilisés.
+
+## Écarts avec la v3 (> 25 m)
+| Secteur | Écart max | Nature |
+|---|---|---|
+| Départ | 129 m | point de départ déplacé (50.62884 / 3.06723) |
+| km 25,2 → 26,0 (Seclin) | 273 m | autre itinéraire dans Seclin |
+| km 42,3 → 42,5 (arrivée) | 165 m | arrivée plus au nord sur le Champ de Mars (50.64075 / 3.05140) |
+| km 9,0 et 21,3 | 29-36 m | ajustements ponctuels |
+
+Conséquence sur les ravitos (posés par distance) : décalage de 27 à 73 m jusqu'au km 25, **180 à 270 m du km 30
+au km 40** (effet cumulé de l'itinéraire de Seclin).

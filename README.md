@@ -10,7 +10,7 @@ les lieux emblématiques, change de fond de carte ; un survol caméra optionnel 
 ## Structure
 
 ```
-raw/Marathon de Lille.gpx    tracé courant (v2) ; raw/archive/ = versions précédentes
+raw/parcours_marathon_lille_2026-*.gpx   tracé OFFICIEL (Openrunner, organisateur, 42,494 km) ; raw/archive/ = versions précédentes
 raw/marathon-*.png           carte officielle de l'organisateur (référence)
 scripts/gpx_to_geojson.py    GPX/KML → GeoJSON (+ dédoublonnage, vérification distance cumulée croissante)
 src/data/parcours.json       tracé LineString (points bruts dédoublonnés, ordre conservé)
