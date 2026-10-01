@@ -78,10 +78,18 @@ async function main() {
   );
   const write = (buf) => new Promise((res, rej) => { ff.stdin.write(buf, (e) => (e ? rej(e) : res())); });
 
-  const browser = await chromium.launch({
+  const launchOpts = {
     headless: HEADLESS,
     args: ["--enable-gpu", "--ignore-gpu-blocklist", "--use-angle=default", `--window-size=${WIDTH},${HEIGHT + 120}`],
-  });
+  };
+  // Chromium de Playwright s'il est présent, sinon Microsoft Edge (installé sur tous les postes Windows)
+  let browser;
+  try {
+    browser = await chromium.launch(launchOpts);
+  } catch {
+    console.log("Chromium Playwright absent → Microsoft Edge");
+    browser = await chromium.launch({ ...launchOpts, channel: "msedge" });
+  }
   const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: 1 });
   page.on("pageerror", (e) => console.error("[page]", e.message));
   await page.goto(URL, { waitUntil: "networkidle" });
