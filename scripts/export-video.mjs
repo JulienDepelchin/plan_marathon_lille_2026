@@ -70,7 +70,7 @@ if (args.pauses) {
     .filter((p) => typeof p.km === "number")
     .sort((a, b) => a.km - b.km);
 }
-const PAUSES_Q = PAUSES.length ? `&pauses=${encodeURIComponent(JSON.stringify(PAUSES.map(({ km, nom }) => ({ km, nom }))))}` : "";
+const PAUSES_Q = PAUSES.length ? `&pauses=${encodeURIComponent(JSON.stringify(PAUSES.map(({ km, nom, affiche }) => ({ km, nom, affiche }))))}` : "";
 const URL = `http://localhost:5173/?export=1&engine=${ENGINE}${CAM}${AVATAR}${PAUSES_Q}`;
 
 function timecode(frame) {

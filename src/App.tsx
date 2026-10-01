@@ -66,14 +66,23 @@ function ExportPage({ engine, token }: { engine: Engine; token: string | undefin
       ? `.export-root .mf-runner{width:84px;height:84px;background:#fff url("${avatar}") center/cover no-repeat;border:4px solid #fff;box-shadow:0 0 0 3px #0854e8,0 3px 10px rgba(0,0,0,.5)}
 .export-root .mf-runner svg{display:none}
 /* bulles des repères au-dessus de la photo (sinon masquées pendant l'arrêt) */
-.export-root .mf-lieu{padding-bottom:58px}`
+.export-root .mf-lieu{padding-bottom:58px;z-index:5}`
       : "";
   // ?pauses=[{"km":2.8,"nom":"Grand-Place"},{"coord":[lon,lat],"kmHint":40.6,"nom":"…"}] (JSON) :
   // repères de séquences tournées, ajoutés aux points de la carte (bulle + fiche, ralenti à l'approche)
   const pauses = useMemo<Lieu[]>(() => {
     try {
-      const raw = JSON.parse(q.get("pauses") ?? "[]") as Array<{ km?: number; coord?: [number, number]; kmHint?: number; nom: string }>;
-      return raw.map((p, i) => ({ id: `pause-${i}`, type: "lieu" as const, nom: p.nom, ...(p.km != null ? { km: p.km } : {}), ...(p.coord ? { coord: p.coord } : {}), ...(p.kmHint != null ? { kmHint: p.kmHint } : {}) }));
+      const raw = JSON.parse(q.get("pauses") ?? "[]") as Array<{ km?: number; coord?: [number, number]; kmHint?: number; nom: string; affiche?: string }>;
+      return raw.map((p, i) => ({
+        id: `pause-${i}`,
+        type: "lieu" as const,
+        nom: p.nom,
+        // kilométrage affiché (bulle + fiche) : « 2,8 km »
+        ...(p.affiche ? { detail: p.affiche, description: p.affiche } : {}),
+        ...(p.km != null ? { km: p.km } : {}),
+        ...(p.coord ? { coord: p.coord } : {}),
+        ...(p.kmHint != null ? { kmHint: p.kmHint } : {}),
+      }));
     } catch {
       return [];
     }

@@ -955,7 +955,8 @@ function makeMarker(gl: GL, map: GLMap, p: LieuPlace, onClick?: (p: LieuPlace) =
   const type = p.type ?? "lieu";
   el.className = `mf-marker mf-${type}` + (onClick ? " clickable" : "");
   const label = type === "ravito" && p.km != null ? `km ${p.km}` : p.nom;
-  el.innerHTML = `<div class="mf-bubble">${ICONS[type] ?? ""}<span>${label}</span></div>`;
+  const detail = p.detail ? `<small class="mf-bubble-detail">${p.detail}</small>` : "";
+  el.innerHTML = `<div class="mf-bubble">${ICONS[type] ?? ""}<span class="mf-bubble-txt"><span>${label}</span>${detail}</span></div>`;
   if (onClick) el.addEventListener("click", (e) => { e.stopPropagation(); onClick(p); });
   return gl.marker(el, "bottom").setLngLat(p.coord).addTo(map);
 }
@@ -1053,6 +1054,8 @@ const CSS = `
 .mf-bubble{position:relative;display:flex;align-items:center;gap:5px;background:#fff;color:#1c2a44;font:700 12px/1 "Source Sans 3","Helvetica Neue",Arial,sans-serif;padding:6px 9px;border-radius:7px;white-space:nowrap;transition:background .15s,color .15s}
 .mf-bubble::after{content:"";position:absolute;left:50%;bottom:-7px;margin-left:-7px;border:7px solid transparent;border-top-color:#fff;border-bottom:0;transition:border-top-color .15s}
 .mf-bubble svg{flex:none;color:${VDN_BLUE}}
+.mf-bubble-txt{display:flex;flex-direction:column;gap:3px}
+.mf-bubble-detail{font-weight:600;font-size:.85em;color:${VDN_BLUE}}
 .mf-marker.clickable:hover .mf-bubble{background:${VDN_BLUE};color:#fff}
 .mf-marker.clickable:hover .mf-bubble::after{border-top-color:${VDN_BLUE}}
 .mf-marker.clickable:hover .mf-bubble svg{color:#fff}

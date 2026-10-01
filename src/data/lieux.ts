@@ -20,6 +20,8 @@ export interface Lieu {
   coord?: [number, number];
   kmHint?: number;
   horsTrace?: number;
+  /** seconde ligne de la bulle (ex. « 2,8 km ») */
+  detail?: string;
 }
 
 const RAVITOS_KM = [5, 10, 15, 20, 25, 30, 35, 40];
