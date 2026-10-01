@@ -98,6 +98,7 @@ function ExportPage({ engine, token }: { engine: Engine; token: string | undefin
         startMode="explore"
         controlRef={control}
         lieux={lieux}
+        transientBubbles
         cameraAltitude={num("altitude", 450)}
         cameraPitch={num("pitch", 70)}
         lookAhead={num("lookahead", 120)}

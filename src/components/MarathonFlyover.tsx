@@ -115,6 +115,11 @@ export interface MarathonFlyoverProps {
   height?: string;
   /** Liste des points (par défaut src/data/lieux.ts) */
   lieux?: Lieu[];
+  /**
+   * Survol : chaque bulle disparaît 500 m après son passage et ne revient pas quand le parcours
+   * repasse au même endroit (l'arrivée reste). Défaut : false (les bulles s'accumulent).
+   */
+  transientBubbles?: boolean;
   /** Panneau de calibrage de la caméra de survol — pour régler, pas pour publier */
   debug?: boolean;
   /**
@@ -190,6 +195,7 @@ export default function MarathonFlyover({
   height = "100vh",
   lieux = LIEUX,
   debug = false,
+  transientBubbles = false,
   controlRef,
   onFinish,
 }: MarathonFlyoverProps) {
@@ -453,7 +459,7 @@ export default function MarathonFlyover({
     gl.lookFromTo(map, pose.position, pose.altitude, pose.target);
     updateLayers(map, g, d);
     runnerRef.current?.setLngLat(sampleAt(g.samples, d));
-    revealPlaces(gl, map, g, d, markersRef.current, setLieuActif);
+    revealPlaces(gl, map, g, d, markersRef.current, setLieuActif, transientBubbles);
     setKm(d / 1000);
     return a.t >= g.timeline.total;
   };
@@ -975,15 +981,23 @@ function revealPlaces(
   geo: Geo,
   d: number,
   markers: Map<string, GLMarker>,
-  setActive: (p: LieuPlace | null) => void
+  setActive: (p: LieuPlace | null) => void,
+  transient = false
 ) {
   let active: LieuPlace | null = null;
   for (const p of geo.places) {
-    if (d >= p.d - 60 && !markers.has(p.id)) markers.set(p.id, makeMarker(gl, map, p));
+    // bulle éphémère : visible de 60 m avant à TRANSIENT_AFTER m après le point (l'arrivée reste)
+    const expired = transient && p.type !== "arrivee" && d > p.d + TRANSIENT_AFTER;
+    if (expired) {
+      markers.get(p.id)?.remove();
+      markers.delete(p.id);
+    } else if (d >= p.d - 60 && !markers.has(p.id)) markers.set(p.id, makeMarker(gl, map, p));
     if (d >= p.d - 60 && d <= p.d + 400) active = p;
   }
   setActive(active);
 }
+
+const TRANSIENT_AFTER = 500; // m
 
 function setInteractive(gl: GL, map: GLMap, on: boolean) {
   const handlers = [map.dragPan, map.scrollZoom, map.dragRotate, map.touchZoomRotate, map.keyboard, map.doubleClickZoom, map.boxZoom];
