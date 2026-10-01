@@ -133,6 +133,7 @@ mesurée sur le tracé). Durées à ×4 : ≈ 2 min 45 ; à ×6 : ≈ 1 min 50. 
 fixe la distance caméra→cible (`altitude·tan(pitch)`, 1,2 km à 450 m / 70°) ; à 700 m la vue devient panoramique.
 Sans `--headless`, une fenêtre Chromium s'ouvre et utilise la carte graphique (plus rapide).
 Option `--avatar raw/photo.jpg` : la photo (recadrée en rond, liseré blanc et bleu VDN) remplace le picto coureur, dans les vidéos seulement ; l'appli garde le picto. La copie dans `public/` est ignorée par git ; ne pas committer la photo elle-même.
+Option `--pauses video/pauses-reconnaissance.json --hold 3` : arrêt de N secondes sur chaque repère (lieux de tournage, km recalés sur les épingles GPS), bulle + fiche du lieu à l'écran, ralenti à l'approche ; le script écrit `<sortie>-reperes.csv` avec le timecode de début et de fin de chaque arrêt (HH:MM:SS:II à 30 i/s) pour caler les rushes au montage. `--to-km 3.3` coupe la vidéo à un km (extrait de test).
 Les vidéos vont dans `sorties/` (ignoré par git). Attribution Mapbox/OSM conservée dans l'image (obligatoire).
 
 ## 4. Réglages (props)

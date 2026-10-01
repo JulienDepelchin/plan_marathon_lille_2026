@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import MarathonFlyover, { type Engine, type FlyoverControl } from "./components/MarathonFlyover";
+import { LIEUX, type Lieu } from "./data/lieux";
 
 /**
  * Page de démo locale (atelier). Dans Lovable, importez directement <MarathonFlyover />.
@@ -44,7 +45,7 @@ function ExportPage({ engine, token }: { engine: Engine; token: string | undefin
       total: () => control.current?.total() ?? 0,
       setRate: (r) => control.current?.setRate(r),
       start: (manual = true) => control.current?.start(manual) ?? false,
-      step: (dt) => control.current?.step(dt) ?? Promise.resolve({ done: true, t: 0 }),
+      step: (dt) => control.current?.step(dt) ?? Promise.resolve({ done: true, t: 0, d: 0 }),
       finish: () => control.current?.finish(),
     };
     return () => {
@@ -63,8 +64,22 @@ function ExportPage({ engine, token }: { engine: Engine; token: string | undefin
   const avatarCss =
     avatar && /^\/[\w.-]+$/.test(avatar)
       ? `.export-root .mf-runner{width:84px;height:84px;background:#fff url("${avatar}") center/cover no-repeat;border:4px solid #fff;box-shadow:0 0 0 3px #0854e8,0 3px 10px rgba(0,0,0,.5)}
-.export-root .mf-runner svg{display:none}`
+.export-root .mf-runner svg{display:none}
+/* bulles des repères au-dessus de la photo (sinon masquées pendant l'arrêt) */
+.export-root .mf-lieu{padding-bottom:58px}`
       : "";
+  // ?pauses=[{"km":2.8,"nom":"Grand-Place"},{"coord":[lon,lat],"kmHint":40.6,"nom":"…"}] (JSON) :
+  // repères de séquences tournées, ajoutés aux points de la carte (bulle + fiche, ralenti à l'approche)
+  const pauses = useMemo<Lieu[]>(() => {
+    try {
+      const raw = JSON.parse(q.get("pauses") ?? "[]") as Array<{ km?: number; coord?: [number, number]; kmHint?: number; nom: string }>;
+      return raw.map((p, i) => ({ id: `pause-${i}`, type: "lieu" as const, nom: p.nom, ...(p.km != null ? { km: p.km } : {}), ...(p.coord ? { coord: p.coord } : {}), ...(p.kmHint != null ? { kmHint: p.kmHint } : {}) }));
+    } catch {
+      return [];
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const lieux = useMemo(() => [...LIEUX, ...pauses], [pauses]);
   return (
     <div className="export-root">
       <style>{EXPORT_CSS + avatarCss}</style>
@@ -73,6 +88,7 @@ function ExportPage({ engine, token }: { engine: Engine; token: string | undefin
         mapboxToken={token}
         startMode="explore"
         controlRef={control}
+        lieux={lieux}
         cameraAltitude={num("altitude", 450)}
         cameraPitch={num("pitch", 70)}
         lookAhead={num("lookahead", 120)}

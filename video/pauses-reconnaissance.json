@@ -1,0 +1,9 @@
+[
+  { "km": 0.28, "nom": "Boulevard Louis-XIV", "lat": 50.628389, "lon": 3.070868 },
+  { "km": 2.81, "nom": "Grand-Place", "lat": 50.636895, "lon": 3.06381 },
+  { "km": 13.55, "nom": "Croisement semi et marathon", "lat": 50.59962, "lon": 3.053352 },
+  { "km": 21.06, "nom": "Passage du semi", "lat": 50.572133, "lon": 3.016381 },
+  { "km": 30.0, "nom": "Montée de la mairie de Wattignies", "lat": 50.588376, "lon": 3.051433 },
+  { "km": 37.7, "nom": "Rue Pierre-Mauroy", "lat": 50.632805, "lon": 3.068074 },
+  { "km": 40.31, "nom": "Porte de Paris", "lat": 50.629552, "lon": 3.068383 }
+]

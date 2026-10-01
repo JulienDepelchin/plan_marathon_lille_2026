@@ -134,7 +134,7 @@ export interface FlyoverControl {
   /** lance le survol ; `manual` = sans boucle d'animation, à avancer avec `step` */
   start: (manual?: boolean) => boolean;
   /** avance de `dt` s (temps réel, la vitesse s'applique) puis attend que la carte soit rendue */
-  step: (dt: number) => Promise<{ done: boolean; t: number }>;
+  step: (dt: number) => Promise<{ done: boolean; t: number; d: number }>;
   /** retour à l'exploration libre */
   finish: () => void;
 }
@@ -498,8 +498,9 @@ export default function MarathonFlyover({
         new Promise((resolve) => {
           const map = mapRef.current;
           const done = advance(dt);
-          if (!map) return resolve({ done: true, t: anim.current.t });
-          const settle = () => resolve({ done, t: anim.current.t });
+          if (!map) return resolve({ done: true, t: anim.current.t, d: 0 });
+          const d = distanceAtTime(geoRef.current.samples, geoRef.current.timeline, anim.current.t);
+          const settle = () => resolve({ done, t: anim.current.t, d });
           const timer = window.setTimeout(settle, 4000); // garde-fou : tuile absente, réseau lent…
           map.once("idle", () => {
             window.clearTimeout(timer);

@@ -8,6 +8,7 @@
  *   node scripts/export-video.mjs [--out sorties/survol.mp4] [--width 1080] [--height 1920]
  *                                 [--fps 30] [--rate 6] [--duration 60] [--engine mapbox|maplibre]
  *                                 [--intro 1.5] [--outro 2] [--headless] [--avatar photo.jpg]
+ *                                 [--pauses video/pauses.json] [--hold 3] [--to-km 3.5]
  *
  *   --rate      multiplicateur de vitesse du survol (2 = comme le site ; 4 recommandé pour la vidéo)
  *   --altitude --pitch --lookahead --smoothing --slowdown --lift : caméra du préréglage vidéo
@@ -23,7 +24,7 @@
  * envoyées à ffmpeg par un tube : rien n'est écrit sur disque à part le .mp4 final.
  */
 import { spawn } from "node:child_process";
-import { mkdirSync, existsSync, copyFileSync } from "node:fs";
+import { mkdirSync, existsSync, copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { chromium } from "playwright";
 
@@ -58,7 +59,25 @@ if (args.avatar) {
   copyFileSync(src, resolve("public", name));
   AVATAR = `&avatar=/${name}`;
 }
-const URL = `http://localhost:5173/?export=1&engine=${ENGINE}${CAM}${AVATAR}`;
+// --pauses fichier.json : repères de séquences tournées [{ "km": 2.8, "nom": "Grand-Place" }, …]
+//   la caméra ralentit à l'approche, s'arrête --hold secondes sur le repère (bulle + fiche affichées),
+//   et un fichier <sortie>-reperes.csv donne le timecode de chaque arrêt pour caler les rushes au montage
+const HOLD = Number(args.hold ?? 3);
+const TO_KM = args["to-km"] != null ? Number(args["to-km"]) : null; // coupe la vidéo à ce km (extrait)
+let PAUSES = [];
+if (args.pauses) {
+  PAUSES = JSON.parse(readFileSync(resolve(args.pauses), "utf-8"))
+    .filter((p) => typeof p.km === "number")
+    .sort((a, b) => a.km - b.km);
+}
+const PAUSES_Q = PAUSES.length ? `&pauses=${encodeURIComponent(JSON.stringify(PAUSES.map(({ km, nom }) => ({ km, nom }))))}` : "";
+const URL = `http://localhost:5173/?export=1&engine=${ENGINE}${CAM}${AVATAR}${PAUSES_Q}`;
+
+function timecode(frame) {
+  const f = frame % FPS, s = Math.floor(frame / FPS);
+  const p2 = (n) => String(n).padStart(2, "0");
+  return `${p2(Math.floor(s / 3600))}:${p2(Math.floor(s / 60) % 60)}:${p2(s % 60)}:${p2(f)}`;
+}
 
 function ffmpegPath() {
   if (process.env.FFMPEG) return process.env.FFMPEG;
@@ -109,13 +128,26 @@ async function main() {
 
   // intro figée
   const first = await shot();
-  for (let i = 0; i < Math.round(INTRO * FPS); i++) await write(first);
+  let outFrame = 0;
+  for (let i = 0; i < Math.round(INTRO * FPS); i++, outFrame++) await write(first);
 
   const t0 = Date.now();
   let done = false;
+  let next = 0; // prochain repère
+  const reperes = [];
   for (let i = 0; i < frames && !done; i++) {
-    ({ done } = await page.evaluate((dt) => window.__mf.step(dt), 1 / FPS));
-    await write(await shot());
+    let d;
+    ({ done, d } = await page.evaluate((dt) => window.__mf.step(dt), 1 / FPS));
+    const img = await shot();
+    await write(img);
+    outFrame++;
+    // arrêt sur repère : l'image courante est tenue HOLD secondes
+    while (next < PAUSES.length && d >= PAUSES[next].km * 1000) {
+      const p = PAUSES[next++];
+      reperes.push({ nom: p.nom, km: p.km, debut: timecode(outFrame), fin: timecode(outFrame + Math.round(HOLD * FPS)) });
+      for (let k = 0; k < Math.round(HOLD * FPS); k++, outFrame++) await write(img);
+    }
+    if (TO_KM != null && d >= TO_KM * 1000) break;
     if (i % FPS === 0) {
       const el = (Date.now() - t0) / 1000;
       const eta = (el / (i + 1)) * (frames - i - 1);
@@ -126,7 +158,17 @@ async function main() {
 
   // outro figée
   const last = await shot();
-  for (let i = 0; i < Math.round(OUTRO * FPS); i++) await write(last);
+  for (let i = 0; i < Math.round(OUTRO * FPS); i++, outFrame++) await write(last);
+
+  if (reperes.length) {
+    const csv = OUT.replace(/\.mp4$/i, "") + "-reperes.csv";
+    const NL = String.fromCharCode(10);
+    const BOM = String.fromCharCode(0xfeff); // Excel lit l'UTF-8 correctement
+    const rowsCsv = reperes.map((r) => `${r.nom};${String(r.km).replace(".", ",")};${r.debut};${r.fin}`);
+    writeFileSync(csv, BOM + ["repere;km;debut_arret;fin_arret", ...rowsCsv].join(NL) + NL, "utf-8");
+    console.log(`Repères (${FPS} i/s) → ${csv}`);
+    for (const r of reperes) console.log(`  ${r.debut}  ${r.nom} (km ${r.km})`);
+  }
 
   ff.stdin.end();
   await new Promise((res) => ff.on("close", res));
